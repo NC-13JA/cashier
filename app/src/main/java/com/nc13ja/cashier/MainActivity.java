@@ -46,6 +46,7 @@ public class MainActivity extends Activity {
             {"Light mode","الوضع الفاتح","Light mode","ライトモード"},
             {"Test barcode scanner","اختبار ماسح الباركود","Test barcode scanner","バーコードスキャナーをテスト"},
             {"About Cashier","حول الكاشير","About Cashier","Cashierについて"},
+            {"Diagnostic log / share","سجل التشخيص / مشاركة","Diagnostic log / share","診断ログ / 共有"},
             {"Camera permission may be needed","قد يحتاج التطبيق إلى إذن الكاميرا","Camera permission may be needed","カメラの許可が必要な場合があります"},
             {"No barcode was returned","لم يتم إرجاع باركود","No barcode was returned","バーコードが読み取られませんでした"},
             {"Cashier works offline and stores data on this device.","يعمل الكاشير دون إنترنت ويحفظ البيانات على هذا الجهاز.","Cashier works offline and stores data on this device.","Cashierはオフラインで動作し、この端末にデータを保存します。"},
@@ -133,23 +134,44 @@ public class MainActivity extends Activity {
             tr("Language") + " / " + (language.equals("ar") ? "العربية" : language.equals("en") ? "English" : language.equals("ja") ? "日本語" : "Français"),
             tr(dark ? "Light mode" : "Dark mode"),
             tr("Test barcode scanner"),
-            tr("About Cashier")
+            tr("About Cashier"),
+            tr("Diagnostic log / share")
         };
         dialog().setTitle(tr("Settings")).setItems(options, (d, which) -> {
             if (which == 0) chooseLanguage();
             else if (which == 1) { dark = !dark; saveData(); render(); }
             else if (which == 2) startBarcodeScan(tr("Scannez le code-barres"));
             else if (which == 3) dialog().setTitle(tr("About Cashier")).setMessage(tr("Cashier works offline and stores data on this device.")).setPositiveButton("OK", null).show();
+            else if (which == 4) showDiagnosticLog();
         }).setNegativeButton(tr("Annuler"), null).show();
+    }
+
+    private void showDiagnosticLog() {
+        CrashLogger.log("USER_ACTION", "Opened diagnostic log viewer");
+        String log = CrashLogger.readLog();
+        AlertDialog.Builder builder = dialog().setTitle(tr("Diagnostic log / share"))
+                .setMessage(log.isEmpty() ? "No log entries yet." : log)
+                .setPositiveButton("Share", (d, which) -> {
+                    Intent share = new Intent(Intent.ACTION_SEND);
+                    share.setType("text/plain");
+                    share.putExtra(Intent.EXTRA_SUBJECT, "Cashier diagnostic log");
+                    share.putExtra(Intent.EXTRA_TEXT, CrashLogger.readLog());
+                    try { startActivity(Intent.createChooser(share, "Share diagnostic log")); }
+                    catch (Exception e) { CrashLogger.crash("Share diagnostic log failed", e); }
+                })
+                .setNegativeButton(tr("Annuler"), null);
+        builder.show();
     }
     private static final int BARCODE_REQUEST = 7101;
     private void startBarcodeScan(String prompt) {
+        CrashLogger.log("SCANNER", "Launching barcode scanner activity");
         try {
             Intent intent = new Intent(this, BarcodeScannerActivity.class);
             intent.putExtra("prompt", prompt);
             intent.putExtra("language", language);
             startActivityForResult(intent, BARCODE_REQUEST);
         } catch (Exception e) {
+            CrashLogger.crash("Could not launch barcode scanner", e);
             dialog().setTitle(tr("Scanner indisponible"))
                     .setMessage(tr("Camera permission may be needed") + "\n" + e.getClass().getSimpleName())
                     .setPositiveButton("OK", null).show();
@@ -202,6 +224,7 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        CrashLogger.log("LIFECYCLE", "MainActivity onCreate");
         prefs = getSharedPreferences("cashier_local_data", MODE_PRIVATE);
         dark = prefs.getBoolean("dark", false);
         language = prefs.getString("language", "fr");
