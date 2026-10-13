@@ -9,6 +9,7 @@
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".BarcodeScannerActivity"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
             android:exported="false"
             android:screenOrientation="unspecified" />
         <activity
