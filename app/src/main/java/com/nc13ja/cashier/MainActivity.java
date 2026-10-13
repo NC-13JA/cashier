@@ -30,6 +30,103 @@ public class MainActivity extends Activity {
     private LinearLayout root, body, nav;
     private String page = "Vente", category = "Tout";
     private boolean dark = false;
+    private String language = "fr";
+    private String tr(String s) {
+        if (s == null || language.equals("fr")) return s;
+        String[][] words = {
+            {"Language","اللغة","Language","言語"},
+            {"Nouvelle vente","بيع جديد","New sale","新規販売"},
+            {"Stock & produits","المخزون والمنتجات","Stock & products","在庫・商品"},
+            {"Caisse & clôture","الصندوق والإغلاق","Cash register & closing","レジ・締め処理"},
+            {"Rapports & statistiques","التقارير والإحصائيات","Reports & statistics","レポート・統計"},
+            {"Vente","بيع","Sale","販売"},{"Stock","المخزون","Stock","在庫"},{"Caisse","الصندوق","Cash","レジ"},{"Rapports","التقارير","Reports","レポート"},
+            {"Tout","الكل","All","すべて"},{"Boissons","مشروبات","Drinks","飲料"},{"Snacks","وجبات خفيفة","Snacks","スナック"},{"Épicerie","مواد غذائية","Groceries","食料品"},{"Divers","متنوع","Miscellaneous","その他"},
+            {"Produits rapides","المنتجات السريعة","Quick products","クイック商品"},
+            {"Nom ou code-barres…","اسم المنتج أو الباركود…","Name or barcode…","商品名またはバーコード…"},
+            {"Scanner","مسح","Scan","スキャン"},{"Rechercher / ajouter","بحث / إضافة","Search / add","検索 / 追加"},
+            {"Scannez le code-barres","امسح الباركود","Scan the barcode","バーコードをスキャン"},
+            {"Scanner indisponible","الماسح غير متاح","Scanner unavailable","スキャナーを利用できません"},
+            {"Panier","السلة","Cart","カート"},{"Le panier est vide. Touchez un produit pour commencer.","السلة فارغة. اضغط على منتج للبدء.","The cart is empty. Tap a product to begin.","カートは空です。商品をタップして開始します。"},
+            {"Remise %","خصم %","Discount %","割引 %"},{"TOTAL  ","الإجمالي  ","TOTAL  ","合計  "},
+            {"Encaisser en espèces","الدفع نقدًا","Pay by cash","現金で会計"},{"Encaisser par carte","الدفع بالبطاقة","Pay by card","カードで会計"},
+            {"Vider le panier","إفراغ السلة","Clear cart","カートを空にする"},{"Stock insuffisant","المخزون غير كافٍ","Insufficient stock","在庫不足"},
+            {"Produit introuvable","المنتج غير موجود","Product not found","商品が見つかりません"},
+            {"Rupture de stock","نفد المخزون","Out of stock","在庫切れ"},{"Panier vide","السلة فارغة","Cart is empty","カートは空です"},
+            {"Vente enregistrée","تم تسجيل البيع","Sale saved","販売を保存しました"},{"Remise : ","الخصم: ","Discount: ","割引: "},
+            {"Paiement : ","طريقة الدفع: ","Payment: ","支払い方法: "},{"Merci !","شكرًا!","Thank you!","ありがとうございます！"},
+            {"Remise rapide","خصم سريع","Quick discount","クイック割引"},{"Remise en % (0 à 100)","الخصم بالنسبة المئوية (0 إلى 100)","Discount % (0 to 100)","割引率（0～100）"},
+            {"Annuler","إلغاء","Cancel","キャンセル"},{"Appliquer","تطبيق","Apply","適用"},
+            {"＋ Ajouter un produit","＋ إضافة منتج","＋ Add product","＋ 商品を追加"},
+            {"Scanner un code-barres pour rechercher","امسح باركود للبحث","Scan a barcode to search","バーコードをスキャンして検索"},
+            {"Scannez un produit","امسح منتجًا","Scan a product","商品をスキャン"},
+            {"produit(s) à stock faible (≤ 3)","منتج بمخزون منخفض (≤ 3)","product(s) low in stock (≤ 3)","在庫が少ない商品（≤ 3）"},
+            {"Modifier","تعديل","Edit","編集"},{"Supprimer","حذف","Delete","削除"},
+            {"Nouveau produit","منتج جديد","New product","新しい商品"},{"Modifier le produit","تعديل المنتج","Edit product","商品を編集"},
+            {"Nom du produit","اسم المنتج","Product name","商品名"},{"Catégorie","الفئة","Category","カテゴリ"},{"Code-barres","الباركود","Barcode","バーコード"},
+            {"Prix en DA","السعر بالدينار","Price in DA","価格（DA）"},{"Quantité en stock","الكمية في المخزون","Stock quantity","在庫数"},
+            {"Enregistrer","حفظ","Save","保存"},{"Vérifiez le nom, le prix et le stock","تحقق من الاسم والسعر والمخزون","Check the name, price and stock","商品名、価格、在庫を確認してください"},
+            {"Fond de caisse initial","الرصيد النقدي الافتتاحي","Opening cash","開始時の現金"},
+            {"Ventes du jour","مبيعات اليوم","Today's sales","本日の売上"},{"Ventes espèces","المبيعات النقدية","Cash sales","現金売上"},
+            {"Ventes carte","مبيعات البطاقة","Card sales","カード売上"},{"＋ Apport de caisse","＋ إيداع في الصندوق","＋ Cash deposit","＋ 現金入金"},
+            {"− Dépense / retrait","− مصروف / سحب","− Expense / withdrawal","− 支出・引き出し"},
+            {"Définir le fond de caisse","تحديد الرصيد الافتتاحي","Set opening cash","開始時の現金を設定"},
+            {"Clôturer la caisse / compter l'espèce","إغلاق الصندوق / عدّ النقد","Close register / count cash","レジ締め・現金を数える"},
+            {"Pièces de caisse récentes","حركات الصندوق الأخيرة","Recent cash movements","最近の現金移動"},
+            {"Montant en DA","المبلغ بالدينار","Amount in DA","金額（DA）"},{"Motif / référence","السبب / المرجع","Reason / reference","理由・参照"},
+            {"Montant invalide","مبلغ غير صالح","Invalid amount","無効な金額"},{"Fond de caisse en DA","الرصيد الافتتاحي بالدينار","Opening cash in DA","開始現金（DA）"},
+            {"Clôture de caisse","إغلاق الصندوق","Register closing","レジ締め"},{"Espèces réellement comptées (DA)","النقد المعدود فعليًا (DA)","Actual cash counted (DA)","実際に数えた現金（DA）"},
+            {"Espèces théoriques : ","النقد المتوقع: ","Expected cash: ","想定現金: "},{"Comparer","مقارنة","Compare","比較"},
+            {"Résultat de clôture","نتيجة الإغلاق","Closing result","締め結果"},{"Théorique : ","المتوقع: ","Expected: ","想定: "},
+            {"Compté : ","المعدود: ","Counted: ","実数: "},{"Écart : ","الفرق: ","Difference: ","差額: "},
+            {"Rapports & statistiques","التقارير والإحصائيات","Reports & statistics","レポート・統計"},
+            {"Ventes aujourd'hui","مبيعات اليوم","Sales today","本日の売上"},{"Ventes sur 7 jours","مبيعات آخر 7 أيام","Sales over 7 days","過去7日間の売上"},
+            {"Transactions du jour","عمليات اليوم","Today's transactions","本日の取引"},{"Unités en stock","الوحدات في المخزون","Units in stock","在庫数"},
+            {"Valeur estimée du stock","القيمة التقديرية للمخزون","Estimated stock value","在庫の推定額"},
+            {"Produits les plus vendus","المنتجات الأكثر مبيعًا","Best-selling products","売れ筋商品"},
+            {"Aucune vente enregistrée pour le moment.","لا توجد مبيعات مسجلة حاليًا.","No sales recorded yet.","まだ販売記録はありません。"},
+            {"Dernières transactions","آخر المعاملات","Latest transactions","最近の取引"},{"Rembourser cette vente","استرداد قيمة هذا البيع","Refund this sale","この販売を返金"},
+            {"Confirmer le remboursement","تأكيد الاسترداد","Confirm refund","返金を確認"},{"Rembourser ","استرداد ","Refund ","返金 "},
+            {" et remettre les produits en stock ?"," وإعادة المنتجات إلى المخزون؟"," and return the products to stock?","して商品を在庫に戻しますか？"},
+            {"Remboursement enregistré","تم تسجيل الاسترداد","Refund recorded","返金を記録しました"},
+            {"Code-barres scanné","تم مسح الباركود","Barcode scanned","バーコードをスキャンしました"},
+            {"Produit inconnu. Voulez-vous créer le produit ?","منتج غير معروف. هل تريد إنشاءه؟","Unknown product. Create it?","不明な商品です。作成しますか？"},
+            {"Créer","إنشاء","Create","作成"},{"Produit ","منتج ","Product ","商品 "},
+            {"Stock : ","المخزون: ","Stock: ","在庫: "},{"Code : ","الرمز: ","Code: ","コード: "},
+            {" · Stock : "," · المخزون: "," · Stock: "," · 在庫: "},
+            {"Vérifiez le nom, le prix et le stock","تحقق من الاسم والسعر والمخزون","Check name, price and stock","商品名、価格、在庫を確認してください"},
+            {"Espèces","نقدًا","Cash","現金"},{"Carte","بطاقة","Card","カード"},
+            {"Apport","إيداع","Deposit","入金"},{"Sortie","سحب","Withdrawal","出金"},
+            {"Clôture","إغلاق","Closing","締め"},{"Remboursement","استرداد","Refund","返金"}
+        };
+        int idx = language.equals("ar") ? 1 : language.equals("en") ? 2 : 3;
+        String out = s;
+        java.util.ArrayList<String[]> ordered = new java.util.ArrayList<>();
+        for (String[] w : words) ordered.add(w);
+        ordered.sort((a,b)->Integer.compare(b[0].length(),a[0].length()));
+        for (String[] w : ordered) if (!w[0].isEmpty()) out = out.replace(w[0], w[idx]);
+        return out;
+    }
+    private AlertDialog.Builder dialog() {
+        return dialog() {
+            @Override public AlertDialog.Builder setTitle(CharSequence title) { return super.setTitle(tr(title == null ? null : title.toString())); }
+            @Override public AlertDialog.Builder setMessage(CharSequence message) { return super.setMessage(tr(message == null ? null : message.toString())); }
+            @Override public AlertDialog.Builder setPositiveButton(CharSequence text, android.content.DialogInterface.OnClickListener listener) { return super.setPositiveButton(tr(text == null ? null : text.toString()), listener); }
+            @Override public AlertDialog.Builder setNegativeButton(CharSequence text, android.content.DialogInterface.OnClickListener listener) { return super.setNegativeButton(tr(text == null ? null : text.toString()), listener); }
+        };
+    }
+    private void chooseLanguage() {
+        String[] names = {"العربية", "Français", "English", "日本語"};
+        String[] codes = {"ar", "fr", "en", "ja"};
+        int selected = 1;
+        for (int i=0;i<codes.length;i++) if (codes[i].equals(language)) selected=i;
+        dialog().setTitle(tr("Language")).setSingleChoiceItems(names, selected, (d, which) -> {
+            language = codes[which];
+            prefs.edit().putString("language", language).apply();
+            d.dismiss();
+            render();
+        }).setNegativeButton(tr("Annuler"), null).show();
+    }
+
     private double discountPercent = 0;
     private double openingCash = 0;
     private final int BLUE = Color.rgb(48, 105, 235);
@@ -65,6 +162,7 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         prefs = getSharedPreferences("cashier_local_data", MODE_PRIVATE);
         dark = prefs.getBoolean("dark", false);
+        language = prefs.getString("language", "fr");
         openingCash = Double.longBitsToDouble(prefs.getLong("openingCash", Double.doubleToLongBits(0)));
         loadData();
         if (products.isEmpty()) seedProducts();
@@ -79,7 +177,7 @@ public class MainActivity extends Activity {
         line = dark ? Color.rgb(58,70,88) : Color.rgb(226,231,240);
     }
     private int dp(float v) { return (int)(v * getResources().getDisplayMetrics().density + 0.5f); }
-    private String money(double v) { return String.format(Locale.FRANCE, "%,.2f DA", v); }
+    private String money(double v) { Locale loc = language.equals("ar") ? new Locale("ar") : language.equals("ja") ? Locale.JAPAN : language.equals("en") ? Locale.US : Locale.FRANCE; return String.format(loc, "%,.2f DA", v); }
     private String now() { return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()); }
     private String today() { return new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date()); }
     private String id() { return String.valueOf(System.currentTimeMillis()); }
@@ -114,10 +212,11 @@ public class MainActivity extends Activity {
 
     private void render() {
         colors();
-        root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(bg);
+        root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setLayoutDirection(language.equals("ar") ? View.LAYOUT_DIRECTION_RTL : View.LAYOUT_DIRECTION_LTR); root.setBackgroundColor(bg);
         setContentView(root);
         LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL); header.setPadding(dp(18),dp(12),dp(18),dp(10));
         TextView brand = text("Cashier",22,true); header.addView(brand,new LinearLayout.LayoutParams(0,dp(44),1));
+        TextView lang = text("🌐",22,true); lang.setGravity(Gravity.CENTER); lang.setBackground(shape(panel,16)); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(48),dp(44)); lp.rightMargin=dp(8); header.addView(lang,lp); lang.setOnClickListener(v->chooseLanguage());
         TextView mode = text(dark ? "☀" : "☾",24,true); mode.setGravity(Gravity.CENTER); mode.setBackground(shape(panel,16)); header.addView(mode,new LinearLayout.LayoutParams(dp(48),dp(44)));
         mode.setOnClickListener(v->{dark=!dark;saveData();render();}); root.addView(header);
         body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(14),dp(4),dp(14),dp(12));
@@ -128,12 +227,12 @@ public class MainActivity extends Activity {
         root.addView(nav);
         if(page.equals("Vente")) salePage(); else if(page.equals("Stock")) stockPage(); else if(page.equals("Caisse")) cashPage(); else reportPage();
     }
-    private TextView text(String s,int size,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(fg);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}
+    private TextView text(String s,int size,boolean bold){TextView t=new TextView(this);t.setText(tr(s));t.setTextSize(size);t.setTextColor(fg);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}
     private GradientDrawable shape(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));d.setStroke(dp(1),line);return d;}
     private LinearLayout card(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(13),dp(12),dp(13),dp(12));l.setBackground(shape(panel,16));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(10);body.addView(l,p);return l;}
     private TextView button(String label,Runnable action){TextView b=text(label,14,true);b.setGravity(Gravity.CENTER);b.setPadding(dp(12),dp(13),dp(12),dp(13));b.setBackground(shape(BLUE,12));b.setTextColor(Color.WHITE);b.setOnClickListener(v->action.run());return b;}
     private void addButtonRow(LinearLayout parent,String label,Runnable action){TextView b=button(label,action);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=dp(8);parent.addView(b,p);}
-    private EditText input(String hint,int type){EditText e=new EditText(this);e.setSingleLine(true);e.setTextSize(15);e.setTextColor(fg);e.setHintTextColor(muted);e.setHint(hint);e.setInputType(type);e.setPadding(dp(12),dp(8),dp(12),dp(8));e.setBackground(shape(bg,10));return e;}
+    private EditText input(String hint,int type){EditText e=new EditText(this);e.setSingleLine(true);e.setTextSize(15);e.setTextColor(fg);e.setHintTextColor(muted);e.setHint(tr(hint));e.setInputType(type);e.setPadding(dp(12),dp(8),dp(12),dp(8));e.setBackground(shape(bg,10));return e;}
     private LinearLayout row(){LinearLayout r=new LinearLayout(this);r.setGravity(Gravity.CENTER_VERTICAL);r.setOrientation(LinearLayout.HORIZONTAL);return r;}
     private void title(String s){TextView t=text(s,20,true);t.setPadding(dp(2),dp(8),dp(2),dp(12));body.addView(t);}
     private void small(LinearLayout parent,String s){TextView t=text(s,13,false);t.setTextColor(muted);parent.addView(t);}
@@ -213,5 +312,5 @@ public class MainActivity extends Activity {
     }
     private void refundSale(Sale s){new AlertDialog.Builder(this).setTitle("Confirmer le remboursement").setMessage("Rembourser "+money(s.total)+" et remettre les produits en stock ?").setNegativeButton("Annuler",null).setPositiveButton("Rembourser",(d,w)->{if(s.refunded)return;s.refunded=true;try{for(String it:s.items.split(", ")){int ix=it.lastIndexOf(" x");if(ix>0){String n=it.substring(0,ix);int q=Integer.parseInt(it.substring(ix+2));for(Product p:products)if(p.name.equals(n)){p.stock+=q;break;}}}}catch(Exception ignored){}cashMoves.add(new CashMove(now(),"Remboursement","Vente "+s.id,s.total));saveData();render();toast("Remboursement enregistré");}).show();}
     @Override protected void onActivityResult(int requestCode,int resultCode,android.content.Intent data){IntentResult result=IntentIntegrator.parseActivityResult(requestCode,resultCode,data);if(result!=null){if(result.getContents()!=null){String code=result.getContents();page="Vente";boolean found=false;for(Product p:products)if(p.barcode.equals(code)){addToCart(p);found=true;break;}if(!found){new AlertDialog.Builder(this).setTitle("Code-barres scanné").setMessage(code+"\nProduit inconnu. Voulez-vous créer le produit ?").setNegativeButton("Annuler",null).setPositiveButton("Créer",(d,w)->{Product p=new Product(id(),"Produit "+code,"Divers",code,0,0);products.add(p);saveData();productDialog(p);}).show();}}return;}super.onActivityResult(requestCode,resultCode,data);}
-    private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_SHORT).show();}
+    private void toast(String s){Toast.makeText(this,tr(s),Toast.LENGTH_SHORT).show();}
 }
