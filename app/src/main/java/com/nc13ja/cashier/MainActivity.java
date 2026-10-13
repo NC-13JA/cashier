@@ -43,6 +43,7 @@ public class MainActivity extends Activity {
     private String page = "Vente", category = "Tout";
     private boolean dark = false;
     private String language = "fr";
+    private int lowStockThreshold = 3;
     private String westernDigits(String s) {
         if (s == null) return null;
         return s.replace('٠','0').replace('١','1').replace('٢','2').replace('٣','3').replace('٤','4')
@@ -131,7 +132,15 @@ public class MainActivity extends Activity {
             {"Importer","استيراد","Import","読み込む"},
             {"Import terminé","اكتمل الاستيراد","Import complete","インポート完了"},
             {"Aucune ligne valide n'a été trouvée.","لم يتم العثور على صفوف صالحة.","No valid rows were found.","有効な行が見つかりません。"},
-            {"Fichier Excel illisible ou colonnes manquantes.","تعذر قراءة ملف Excel أو أن الأعمدة المطلوبة غير موجودة.","Excel file unreadable or required columns are missing.","Excelファイルを読み取れないか、必要な列がありません。"}
+            {"Fichier Excel illisible ou colonnes manquantes.","تعذر قراءة ملف Excel أو أن الأعمدة المطلوبة غير موجودة.","Excel file unreadable or required columns are missing.","Excelファイルを読み取れないか、必要な列がありません。"},
+            {"Export backup","تصدير نسخة احتياطية","Export backup","バックアップをエクスポート"},
+            {"Restore backup","استعادة نسخة احتياطية","Restore backup","バックアップを復元"},
+            {"Export sales CSV","تصدير المبيعات CSV","Export sales CSV","売上CSVをエクスポート"},
+            {"Low stock alert limit","حد تنبيه المخزون المنخفض","Low stock alert limit","在庫不足の警告しきい値"},
+            {"Stock movement history","سجل حركة المخزون","Stock movement history","在庫変動履歴"},
+            {"Backup created","تم إنشاء النسخة الاحتياطية","Backup created","バックアップを作成しました"},
+            {"Restore data from this backup? Existing data will be replaced.","استعادة بيانات هذه النسخة؟ سيتم استبدال البيانات الحالية.","Restore data from this backup? Existing data will be replaced.","このバックアップから復元しますか？現在のデータは置き換えられます。"},
+            {"Invalid or incomplete backup file.","ملف النسخة الاحتياطية غير صالح أو غير مكتمل.","Invalid or incomplete backup file.","バックアップファイルが無効または不完全です。"}
         };
         int idx = language.equals("ar") ? 1 : language.equals("en") ? 2 : 3;
         String out = s;
@@ -155,7 +164,11 @@ public class MainActivity extends Activity {
             tr(dark ? "Light mode" : "Dark mode"),
             tr("Test barcode scanner"),
             tr("About Cashier"),
-            tr("Diagnostic log / share")
+            tr("Diagnostic log / share"),
+            tr("Export backup"),
+            tr("Restore backup"),
+            tr("Export sales CSV"),
+            tr("Low stock alert limit")
         };
         dialog().setTitle(tr("Settings")).setItems(options, (d, which) -> {
             if (which == 0) chooseLanguage();
@@ -163,6 +176,10 @@ public class MainActivity extends Activity {
             else if (which == 2) startBarcodeScan(tr("Scannez le code-barres"));
             else if (which == 3) dialog().setTitle(tr("About Cashier")).setMessage(tr("Cashier works offline and stores data on this device.")).setPositiveButton("OK", null).show();
             else if (which == 4) showDiagnosticLog();
+            else if (which == 5) createBackupFile();
+            else if (which == 6) chooseBackupFile();
+            else if (which == 7) createSalesCsvFile();
+            else if (which == 8) configureLowStockThreshold();
         }).setNegativeButton(tr("Annuler"), null).show();
     }
 
@@ -184,6 +201,9 @@ public class MainActivity extends Activity {
     }
     private static final int BARCODE_REQUEST = 7101;
     private static final int EXCEL_REQUEST = 7102;
+    private static final int BACKUP_EXPORT_REQUEST = 7103;
+    private static final int BACKUP_IMPORT_REQUEST = 7104;
+    private static final int SALES_EXPORT_REQUEST = 7105;
     private static class ImportRow {
         String name; int stock; double price;
         ImportRow(String name, int stock, double price) { this.name=name; this.stock=stock; this.price=price; }
@@ -256,6 +276,7 @@ public class MainActivity extends Activity {
         dark = prefs.getBoolean("dark", false);
         language = prefs.getString("language", "fr");
         openingCash = Double.longBitsToDouble(prefs.getLong("openingCash", Double.doubleToLongBits(0)));
+        lowStockThreshold = Math.max(0, prefs.getInt("lowStockThreshold", 3));
         loadData();
         if (products.isEmpty()) seedProducts();
         render();
@@ -298,7 +319,7 @@ public class MainActivity extends Activity {
             for(Product x:products){ JSONObject o=new JSONObject(); o.put("id",x.id);o.put("name",x.name);o.put("category",x.category);o.put("barcode",x.barcode);o.put("price",x.price);o.put("stock",x.stock);p.put(o); }
             for(Sale x:sales){ JSONObject o=new JSONObject();o.put("id",x.id);o.put("time",x.time);o.put("payment",x.payment);o.put("items",x.items);o.put("total",x.total);o.put("discount",x.discount);o.put("refunded",x.refunded);s.put(o); }
             for(CashMove x:cashMoves){ JSONObject o=new JSONObject();o.put("time",x.time);o.put("type",x.type);o.put("note",x.note);o.put("amount",x.amount);m.put(o); }
-            prefs.edit().putString("products",p.toString()).putString("sales",s.toString()).putString("moves",m.toString()).putLong("openingCash",Double.doubleToLongBits(openingCash)).putBoolean("dark",dark).apply();
+            prefs.edit().putString("products",p.toString()).putString("sales",s.toString()).putString("moves",m.toString()).putLong("openingCash",Double.doubleToLongBits(openingCash)).putBoolean("dark",dark).putInt("lowStockThreshold",lowStockThreshold).apply();
         } catch(Exception ignored) { }
     }
 
@@ -344,7 +365,7 @@ public class MainActivity extends Activity {
         TextView scan=button("Scanner",()->startBarcodeScan(tr("Scannez le code-barres")));LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(105),dp(50));sp.leftMargin=dp(8);sr.addView(scan,sp);search.addView(sr);
         addButtonRow(search,"Rechercher / ajouter",()->addByCode(find.getText().toString()));
         find.setOnEditorActionListener((v,a,event)->{addByCode(find.getText().toString());return true;});
-        LinearLayout cats=card(); HorizontalScrollView hs=new HorizontalScrollView(this);LinearLayout cr=row();String[] cs={"Tout","Boissons","Snacks","Épicerie","Divers"};for(String c:cs){TextView b=text(c,12,true);b.setPadding(dp(12),dp(10),dp(12),dp(10));b.setTextColor(category.equals(c)?BLUE:fg);cr.addView(b);b.setOnClickListener(v->{category=c;render();});}hs.addView(cr);cats.addView(hs);
+        LinearLayout cats=card(); HorizontalScrollView hs=new HorizontalScrollView(this);LinearLayout cr=row();ArrayList<String> cs=new ArrayList<>();cs.add("Tout");for(Product product:products)if(!product.category.trim().isEmpty()&&!cs.contains(product.category.trim()))cs.add(product.category.trim());if(!cs.contains(category))category="Tout";for(String c:cs){TextView b=text(c,12,true);b.setPadding(dp(12),dp(10),dp(12),dp(10));b.setTextColor(category.equals(c)?BLUE:fg);cr.addView(b);b.setOnClickListener(v->{category=c;render();});}hs.addView(cr);cats.addView(hs);
         title("Produits rapides");
         LinearLayout grid=new LinearLayout(this);grid.setOrientation(LinearLayout.VERTICAL);
         int shown=0;LinearLayout gr=null;
@@ -371,6 +392,164 @@ public class MainActivity extends Activity {
     }
     private void discountDialog(){EditText e=input("Remise en % (0 à 100)",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);e.setText(String.valueOf(discountPercent));dialog().setTitle("Remise rapide").setView(e).setNegativeButton("Annuler",null).setPositiveButton("Appliquer",(d,w)->{try{discountPercent=Math.max(0,Math.min(100,Double.parseDouble(e.getText().toString())));}catch(Exception ignored){}render();}).show();}
 
+
+
+    private JSONObject buildBackupJson() throws Exception {
+        JSONObject backup = new JSONObject();
+        backup.put("app", "Cashier");
+        backup.put("formatVersion", 1);
+        backup.put("exportedAt", now());
+        JSONArray p = new JSONArray(), ss = new JSONArray(), m = new JSONArray();
+        for (Product x : products) {
+            JSONObject o = new JSONObject();
+            o.put("id", x.id); o.put("name", x.name); o.put("category", x.category);
+            o.put("barcode", x.barcode); o.put("price", x.price); o.put("stock", x.stock); p.put(o);
+        }
+        for (Sale x : sales) {
+            JSONObject o = new JSONObject();
+            o.put("id", x.id); o.put("time", x.time); o.put("payment", x.payment); o.put("items", x.items);
+            o.put("total", x.total); o.put("discount", x.discount); o.put("refunded", x.refunded); ss.put(o);
+        }
+        for (CashMove x : cashMoves) {
+            JSONObject o = new JSONObject();
+            o.put("time", x.time); o.put("type", x.type); o.put("note", x.note); o.put("amount", x.amount); m.put(o);
+        }
+        backup.put("products", p); backup.put("sales", ss); backup.put("moves", m);
+        backup.put("openingCash", openingCash); backup.put("dark", dark);
+        backup.put("language", language); backup.put("lowStockThreshold", lowStockThreshold);
+        return backup;
+    }
+
+    private void createBackupFile() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_TITLE, "cashier-backup-" + today() + ".json");
+            startActivityForResult(intent, BACKUP_EXPORT_REQUEST);
+        } catch (Exception e) {
+            CrashLogger.crash("Backup file picker failed", e);
+            toast("Export failed");
+        }
+    }
+
+    private void chooseBackupFile() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivityForResult(intent, BACKUP_IMPORT_REQUEST);
+        } catch (Exception e) {
+            CrashLogger.crash("Backup restore picker failed", e);
+            toast("Import failed");
+        }
+    }
+
+    private void writeTextFile(Uri uri, String value) throws Exception {
+        try (java.io.OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+            if (out == null) throw new Exception("Cannot open destination");
+            out.write(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            out.flush();
+        }
+    }
+
+    private String csvCell(String value) {
+        String v = value == null ? "" : value;
+        return "\"" + v.replace("\"", "\"\"") + "\"";
+    }
+
+    private void createSalesCsvFile() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("text/csv");
+            intent.putExtra(Intent.EXTRA_TITLE, "cashier-sales-" + today() + ".csv");
+            startActivityForResult(intent, SALES_EXPORT_REQUEST);
+        } catch (Exception e) {
+            CrashLogger.crash("Sales export picker failed", e);
+            toast("Export failed");
+        }
+    }
+
+    private String buildSalesCsv() {
+        StringBuilder csv = new StringBuilder("\uFEFFDate;ID;Paiement;Articles;Total_DA;Remise_pct;Remboursée\n");
+        for (Sale sale : sales) {
+            csv.append(csvCell(sale.time)).append(';').append(csvCell(sale.id)).append(';')
+                    .append(csvCell(sale.payment)).append(';').append(csvCell(sale.items)).append(';')
+                    .append(String.format(Locale.US, "%.2f", sale.total)).append(';')
+                    .append(String.format(Locale.US, "%.2f", sale.discount)).append(';')
+                    .append(sale.refunded ? "Oui" : "Non").append('\n');
+        }
+        return csv.toString();
+    }
+
+    private void restoreBackupFromUri(Uri uri) {
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new Exception("empty backup");
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = input.read(buffer)) != -1) {
+                if (bytes.size() + n > 20 * 1024 * 1024) throw new Exception("backup too large");
+                bytes.write(buffer, 0, n);
+            }
+            JSONObject backup = new JSONObject(new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8));
+            if (!"Cashier".equals(backup.optString("app")) || backup.optInt("formatVersion", 0) != 1
+                    || !(backup.opt("products") instanceof JSONArray)
+                    || !(backup.opt("sales") instanceof JSONArray)
+                    || !(backup.opt("moves") instanceof JSONArray)) throw new Exception("invalid format");
+            JSONArray pa = backup.getJSONArray("products"), sa = backup.getJSONArray("sales"), ma = backup.getJSONArray("moves");
+            ArrayList<Product> restoredProducts = new ArrayList<>();
+            ArrayList<Sale> restoredSales = new ArrayList<>();
+            ArrayList<CashMove> restoredMoves = new ArrayList<>();
+            for (int i=0;i<pa.length();i++) {
+                JSONObject o=pa.getJSONObject(i);
+                String name=o.optString("name").trim();
+                double price=o.optDouble("price", -1); int stock=o.optInt("stock", -1);
+                if(name.isEmpty() || price<0 || stock<0 || !Double.isFinite(price)) throw new Exception("invalid product");
+                restoredProducts.add(new Product(o.optString("id", id()), name, o.optString("category","Divers"),
+                        o.optString("barcode",""), price, stock));
+            }
+            for (int i=0;i<sa.length();i++) {
+                JSONObject o=sa.getJSONObject(i);
+                restoredSales.add(new Sale(o.optString("id"),o.optString("time"),o.optString("payment"),
+                        o.optString("items"),o.optDouble("total"),o.optDouble("discount"),o.optBoolean("refunded")));
+            }
+            for (int i=0;i<ma.length();i++) {
+                JSONObject o=ma.getJSONObject(i);
+                restoredMoves.add(new CashMove(o.optString("time"),o.optString("type"),o.optString("note"),o.optDouble("amount")));
+            }
+            double restoredOpening = backup.optDouble("openingCash", 0);
+            int restoredThreshold = Math.max(0, backup.optInt("lowStockThreshold", 3));
+            String restoredLanguage = backup.optString("language", "fr");
+            if (!restoredLanguage.equals("fr") && !restoredLanguage.equals("ar")
+                    && !restoredLanguage.equals("en") && !restoredLanguage.equals("ja")) restoredLanguage = "fr";
+            final String finalLanguage = restoredLanguage;
+            final double finalOpening = Math.max(0, restoredOpening);
+            final int finalThreshold = restoredThreshold;
+            dialog().setTitle(tr("Restore backup"))
+                    .setMessage(tr("Restore data from this backup? Existing data will be replaced.")
+                            + "\n\nProducts: " + restoredProducts.size() + "\nSales: " + restoredSales.size()
+                            + "\nCash movements: " + restoredMoves.size() + "\nBackup date: " + backup.optString("exportedAt", "—"))
+                    .setNegativeButton(tr("Annuler"), null)
+                    .setPositiveButton(tr("Restore backup"), (d,w) -> {
+                        products.clear(); products.addAll(restoredProducts);
+                        sales.clear(); sales.addAll(restoredSales);
+                        cashMoves.clear(); cashMoves.addAll(restoredMoves);
+                        openingCash=finalOpening; lowStockThreshold=finalThreshold;
+                        dark=backup.optBoolean("dark", false); language=finalLanguage;
+                        cart.clear(); discountPercent=0; category="Tout"; page="Vente";
+                        saveData(); prefs.edit().putString("language",language).apply();
+                        render();
+                        toast("Backup restored");
+                    }).show();
+        } catch (Exception e) {
+            CrashLogger.crash("Backup restore failed", e);
+            dialog().setTitle(tr("Restore backup")).setMessage(tr("Invalid or incomplete backup file."))
+                    .setPositiveButton("OK", null).show();
+        }
+    }
 
     private void startExcelImport() {
         try {
@@ -597,9 +776,9 @@ public class MainActivity extends Activity {
         title("Stock & produits");LinearLayout actions=card();addButtonRow(actions,"＋ Ajouter un produit",()->productDialog(null));
         addButtonRow(actions,"Importer un fichier Excel (.xlsx)",()->startExcelImport());
         addButtonRow(actions,"Scanner un code-barres pour rechercher",()->startBarcodeScan(tr("Scannez un produit")));
-        int low=0;for(Product p:products)if(p.stock<=3)low++;
-        TextView warning=text(low+" produit(s) à stock faible (≤ 3)",14,true);warning.setTextColor(low>0?Color.rgb(225,125,35):BLUE);actions.addView(warning);
-        for(Product p:new ArrayList<>(products)){LinearLayout c=card();TextView n=text(p.name,17,true);c.addView(n);small(c,p.category+" · "+money(p.price)+" · Code : "+(p.barcode.isEmpty()?"—":p.barcode));TextView st=text("Stock : "+p.stock,14,true);st.setTextColor(p.stock<=3?Color.rgb(225,80,70):BLUE);c.addView(st);
+        int low=0;for(Product p:products)if(p.stock<=lowStockThreshold)low++;
+        TextView warning=text(low+" produit(s) à stock faible (≤ "+lowStockThreshold+")",14,true);warning.setTextColor(low>0?Color.rgb(225,125,35):BLUE);actions.addView(warning);
+        for(Product p:new ArrayList<>(products)){LinearLayout c=card();TextView n=text(p.name,17,true);c.addView(n);small(c,p.category+" · "+money(p.price)+" · Code : "+(p.barcode.isEmpty()?"—":p.barcode));TextView st=text("Stock : "+p.stock,14,true);st.setTextColor(p.stock<=lowStockThreshold?Color.rgb(225,80,70):BLUE);c.addView(st);
             LinearLayout rr=row();TextView edit=button("Modifier",()->productDialog(p));rr.addView(edit,new LinearLayout.LayoutParams(0,-2,1));TextView del=button("Supprimer",()->dialog().setMessage("Supprimer "+p.name+" ?").setNegativeButton("Annuler",null).setPositiveButton("Supprimer",(d,w)->{products.remove(p);saveData();render();}).show());LinearLayout.LayoutParams dp=new LinearLayout.LayoutParams(0,-2,1);dp.leftMargin=dp(8);rr.addView(del,dp);c.addView(rr);
         }
     }
@@ -616,7 +795,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams scanParams=new LinearLayout.LayoutParams(-2,dp(48));scanParams.leftMargin=dp(8);barcodeRow.addView(scanBarcode,scanParams);form.addView(barcodeRow);
         form.addView(price,new LinearLayout.LayoutParams(-1,dp(52)));form.addView(stock,new LinearLayout.LayoutParams(-1,dp(52)));
         if(existing!=null){name.setText(existing.name);cat.setText(existing.category);barcode.setText(existing.barcode);price.setText(String.valueOf(existing.price));stock.setText(String.valueOf(existing.stock));}
-        dialog().setTitle(existing==null?"Nouveau produit":"Modifier le produit").setView(form).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{String n=name.getText().toString().trim();double pr=Double.parseDouble(price.getText().toString());int qty=Integer.parseInt(stock.getText().toString());if(n.isEmpty()||pr<0||qty<0)throw new Exception();if(existing==null)products.add(new Product(id(),n,cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim(),barcode.getText().toString().trim(),pr,qty));else{existing.name=n;existing.category=cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim();existing.barcode=barcode.getText().toString().trim();existing.price=pr;existing.stock=qty;if(isNewScannedProduct)products.add(existing);}saveData();render();}catch(Exception ex){toast("Vérifiez le nom, le prix et le stock");}}).show();
+        dialog().setTitle(existing==null?"Nouveau produit":"Modifier le produit").setView(form).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{String n=name.getText().toString().trim();double pr=Double.parseDouble(price.getText().toString());int qty=Integer.parseInt(stock.getText().toString());if(n.isEmpty()||pr<0||qty<0)throw new Exception();String bc=barcode.getText().toString().trim();if(!bc.isEmpty()){for(Product p:products)if(p!=existing&&bc.equals(p.barcode))throw new IllegalArgumentException("duplicate barcode");}if(existing==null)products.add(new Product(id(),n,cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim(),bc,pr,qty));else{existing.name=n;existing.category=cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim();existing.barcode=bc;existing.price=pr;existing.stock=qty;if(isNewScannedProduct)products.add(existing);}saveData();render();}catch(Exception ex){toast("Vérifiez le nom, le prix et le stock");}}).show();
     }
 
     private void cashPage(){
@@ -630,6 +809,22 @@ public class MainActivity extends Activity {
     }
     private void metric(LinearLayout c,String label,String value){LinearLayout r=row();TextView l=text(label,14,false);l.setTextColor(muted);r.addView(l,new LinearLayout.LayoutParams(0,-2,1));r.addView(text(value,15,true));c.addView(r);View v=new View(this);v.setBackgroundColor(line);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(1));p.topMargin=dp(8);p.bottomMargin=dp(8);c.addView(v,p);}
     private void cashMoveDialog(String type){LinearLayout f=new LinearLayout(this);f.setOrientation(LinearLayout.VERTICAL);EditText amount=input("Montant en DA",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);EditText note=input("Motif / référence",InputType.TYPE_CLASS_TEXT);f.addView(amount);f.addView(note);dialog().setTitle(type+" de caisse").setView(f).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{double a=Double.parseDouble(amount.getText().toString());if(a<=0)throw new Exception();cashMoves.add(new CashMove(now(),type,note.getText().toString(),a));saveData();render();}catch(Exception e){toast("Montant invalide");}}).show();}
+    private void configureLowStockThreshold() {
+        EditText field = input("Low stock alert limit", InputType.TYPE_CLASS_NUMBER);
+        field.setText(String.valueOf(lowStockThreshold));
+        dialog().setTitle(tr("Low stock alert limit")).setView(field)
+                .setNegativeButton(tr("Annuler"), null)
+                .setPositiveButton(tr("Enregistrer"), (d, w) -> {
+                    try {
+                        int value = Integer.parseInt(westernDigits(field.getText().toString().trim()));
+                        if (value < 0 || value > 1000000) throw new Exception("range");
+                        lowStockThreshold = value;
+                        saveData();
+                        render();
+                    } catch (Exception e) { toast("Montant invalide"); }
+                }).show();
+    }
+
     private void openingCashDialog(){EditText e=input("Fond de caisse en DA",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);e.setText(String.valueOf(openingCash));dialog().setTitle("Fond de caisse initial").setView(e).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{openingCash=Math.max(0,Double.parseDouble(e.getText().toString()));saveData();render();}catch(Exception ex){toast("Montant invalide");}}).show();}
     private void closeShift(double expected){EditText actual=input("Espèces réellement comptées (DA)",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);dialog().setTitle("Clôture de caisse").setMessage("Espèces théoriques : "+money(expected)).setView(actual).setNegativeButton("Annuler",null).setPositiveButton("Comparer",(d,w)->{try{double a=Double.parseDouble(actual.getText().toString());String result="Théorique : "+money(expected)+"\nCompté : "+money(a)+"\nÉcart : "+money(a-expected)+"\n"+now();dialog().setTitle("Résultat de clôture").setMessage(result).setPositiveButton("OK",null).show();cashMoves.add(new CashMove(now(),"Clôture", "Compté "+money(a)+" / théorique "+money(expected)+" / écart "+money(a-expected),0));saveData();}catch(Exception e){toast("Montant invalide");}}).show();}
 
@@ -644,6 +839,24 @@ public class MainActivity extends Activity {
     private void refundSale(Sale s){dialog().setTitle("Confirmer le remboursement").setMessage("Rembourser "+money(s.total)+" et remettre les produits en stock ?").setNegativeButton("Annuler",null).setPositiveButton("Rembourser",(d,w)->{if(s.refunded)return;s.refunded=true;try{for(String it:s.items.split(", ")){int ix=it.lastIndexOf(" x");if(ix>0){String n=it.substring(0,ix);int q=Integer.parseInt(it.substring(ix+2));for(Product p:products)if(p.name.equals(n)){p.stock+=q;break;}}}}catch(Exception ignored){}cashMoves.add(new CashMove(now(),"Remboursement","Vente "+s.id,s.total));saveData();render();toast("Remboursement enregistré");}).show();}
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == BACKUP_EXPORT_REQUEST) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                try { writeTextFile(data.getData(), buildBackupJson().toString(2)); toast("Backup created"); }
+                catch (Exception e) { CrashLogger.crash("Backup export failed", e); toast("Export failed"); }
+            }
+            return;
+        }
+        if (requestCode == SALES_EXPORT_REQUEST) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                try { writeTextFile(data.getData(), buildSalesCsv()); toast("Sales exported"); }
+                catch (Exception e) { CrashLogger.crash("Sales export failed", e); toast("Export failed"); }
+            }
+            return;
+        }
+        if (requestCode == BACKUP_IMPORT_REQUEST) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) restoreBackupFromUri(data.getData());
+            return;
+        }
         if (requestCode == EXCEL_REQUEST) {
             if (resultCode == RESULT_OK && data != null && data.getData() != null) {
                 Uri uri = data.getData();
