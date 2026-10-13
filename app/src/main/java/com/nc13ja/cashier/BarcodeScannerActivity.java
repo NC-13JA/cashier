@@ -1,7 +1,7 @@
 package com.nc13ja.cashier;
 
 import android.Manifest;
-import androidx.appcompat.app.AppCompatActivity;
+import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -33,7 +33,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class BarcodeScannerActivity extends AppCompatActivity {
+public class BarcodeScannerActivity extends Activity {
     public static final String EXTRA_BARCODE = "barcode_value";
     private static final int CAMERA_PERMISSION_REQUEST = 7302;
     private PreviewView previewView;
