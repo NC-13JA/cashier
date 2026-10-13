@@ -58,7 +58,7 @@ public class MainActivity extends Activity {
             {"Tout","الكل","All","すべて"},{"Boissons","مشروبات","Drinks","飲料"},{"Snacks","وجبات خفيفة","Snacks","スナック"},{"Épicerie","مواد غذائية","Groceries","食料品"},{"Divers","متنوع","Miscellaneous","その他"},
             {"Produits rapides","المنتجات السريعة","Quick products","クイック商品"},
             {"Nom ou code-barres…","اسم المنتج أو الباركود…","Name or barcode…","商品名またはバーコード…"},
-            {"Scanner","مسح","Scan","スキャン"},{"Rechercher / ajouter","بحث / إضافة","Search / add","検索 / 追加"},
+            {"Scanner","مسح","Scan","スキャン"},{"Scan barcode","مسح الباركود","Scan barcode","バーコードをスキャン"},{"Rechercher / ajouter","بحث / إضافة","Search / add","検索 / 追加"},
             {"Scannez le code-barres","امسح الباركود","Scan the barcode","バーコードをスキャン"},
             {"Scanner indisponible","الماسح غير متاح","Scanner unavailable","スキャナーを利用できません"},
             {"Panier","السلة","Cart","カート"},{"Le panier est vide. Touchez un produit pour commencer.","السلة فارغة. اضغط على منتج للبدء.","The cart is empty. Tap a product to begin.","カートは空です。商品をタップして開始します。"},
@@ -163,6 +163,8 @@ public class MainActivity extends Activity {
         builder.show();
     }
     private static final int BARCODE_REQUEST = 7101;
+    private boolean scanningForProductBarcode = false;
+    private EditText productBarcodeField;
     private void startBarcodeScan(String prompt) {
         CrashLogger.log("SCANNER", "Launching barcode scanner activity");
         try {
@@ -357,7 +359,14 @@ public class MainActivity extends Activity {
     private void productDialog(Product existing, boolean isNewScannedProduct){
         LinearLayout form=new LinearLayout(this);form.setPadding(dp(4),dp(4),dp(4),dp(4));form.setOrientation(LinearLayout.VERTICAL);
         EditText name=input("Nom du produit",InputType.TYPE_CLASS_TEXT);EditText cat=input("Catégorie",InputType.TYPE_CLASS_TEXT);EditText barcode=input("Code-barres",InputType.TYPE_CLASS_TEXT);EditText price=input("Prix en DA",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);EditText stock=input("Quantité en stock",InputType.TYPE_CLASS_NUMBER);
-        EditText[] all={name,cat,barcode,price,stock};for(EditText e:all){form.addView(e,new LinearLayout.LayoutParams(-1,dp(52)));if(e==name)e.setHint("Nom du produit");}
+        productBarcodeField = barcode;
+        EditText[] beforeBarcode={name,cat};
+        for(EditText e:beforeBarcode)form.addView(e,new LinearLayout.LayoutParams(-1,dp(52)));
+        LinearLayout barcodeRow=new LinearLayout(this);barcodeRow.setOrientation(LinearLayout.HORIZONTAL);barcodeRow.setGravity(Gravity.CENTER_VERTICAL);
+        barcodeRow.addView(barcode,new LinearLayout.LayoutParams(0,dp(52),1));
+        TextView scanBarcode=button("Scan barcode",()->{scanningForProductBarcode=true;startBarcodeScan(tr("Scannez le code-barres"));});
+        LinearLayout.LayoutParams scanParams=new LinearLayout.LayoutParams(-2,dp(48));scanParams.leftMargin=dp(8);barcodeRow.addView(scanBarcode,scanParams);form.addView(barcodeRow);
+        form.addView(price,new LinearLayout.LayoutParams(-1,dp(52)));form.addView(stock,new LinearLayout.LayoutParams(-1,dp(52)));
         if(existing!=null){name.setText(existing.name);cat.setText(existing.category);barcode.setText(existing.barcode);price.setText(String.valueOf(existing.price));stock.setText(String.valueOf(existing.stock));}
         dialog().setTitle(existing==null?"Nouveau produit":"Modifier le produit").setView(form).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{String n=name.getText().toString().trim();double pr=Double.parseDouble(price.getText().toString());int qty=Integer.parseInt(stock.getText().toString());if(n.isEmpty()||pr<0||qty<0)throw new Exception();if(existing==null)products.add(new Product(id(),n,cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim(),barcode.getText().toString().trim(),pr,qty));else{existing.name=n;existing.category=cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim();existing.barcode=barcode.getText().toString().trim();existing.price=pr;existing.stock=qty;if(isNewScannedProduct)products.add(existing);}saveData();render();}catch(Exception ex){toast("Vérifiez le nom, le prix et le stock");}}).show();
     }
@@ -387,7 +396,20 @@ public class MainActivity extends Activity {
     private void refundSale(Sale s){dialog().setTitle("Confirmer le remboursement").setMessage("Rembourser "+money(s.total)+" et remettre les produits en stock ?").setNegativeButton("Annuler",null).setPositiveButton("Rembourser",(d,w)->{if(s.refunded)return;s.refunded=true;try{for(String it:s.items.split(", ")){int ix=it.lastIndexOf(" x");if(ix>0){String n=it.substring(0,ix);int q=Integer.parseInt(it.substring(ix+2));for(Product p:products)if(p.name.equals(n)){p.stock+=q;break;}}}}catch(Exception ignored){}cashMoves.add(new CashMove(now(),"Remboursement","Vente "+s.id,s.total));saveData();render();toast("Remboursement enregistré");}).show();}
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != BARCODE_REQUEST || resultCode != RESULT_OK || data == null) return;
+        if (requestCode != BARCODE_REQUEST) return;
+        if (scanningForProductBarcode) {
+            scanningForProductBarcode = false;
+            if (resultCode == RESULT_OK && data != null && productBarcodeField != null) {
+                String scanned = data.getStringExtra(BarcodeScannerActivity.EXTRA_BARCODE);
+                if (scanned != null && !scanned.trim().isEmpty()) {
+                    productBarcodeField.setText(westernDigits(scanned.trim()));
+                    productBarcodeField.setSelection(productBarcodeField.getText().length());
+                    toast("Code-barres scanné");
+                }
+            }
+            return;
+        }
+        if (resultCode != RESULT_OK || data == null) return;
         String code = data.getStringExtra(BarcodeScannerActivity.EXTRA_BARCODE);
         if (code == null || code.trim().isEmpty()) {
             toast("No barcode was returned");
