@@ -46,6 +46,7 @@ public class BarcodeScannerActivity extends AppCompatActivity {
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        CrashLogger.log("LIFECYCLE", "BarcodeScannerActivity onCreate");
         getWindow().setStatusBarColor(Color.rgb(12, 25, 35));
         getWindow().setNavigationBarColor(Color.rgb(12, 25, 35));
         language = getIntent().getStringExtra("language");
@@ -175,6 +176,7 @@ public class BarcodeScannerActivity extends AppCompatActivity {
     }
 
     private void startCamera() {
+        CrashLogger.log("CAMERA", "Requesting rear camera provider");
         ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(this);
         future.addListener(() -> {
             try {
@@ -208,8 +210,10 @@ public class BarcodeScannerActivity extends AppCompatActivity {
                                         }
                                     }
                                 })
-                                .addOnFailureListener(error -> android.util.Log.w(
-                                        "CashierScanner", "Barcode analysis failed", error))
+                                .addOnFailureListener(error -> {
+                                    android.util.Log.w("CashierScanner", "Barcode analysis failed", error);
+                                    CrashLogger.crash("ML Kit barcode analysis failed", error);
+                                })
                                 .addOnCompleteListener(task -> imageProxy.close());
                     } catch (Exception error) {
                         // Always release the camera frame if image conversion or task startup fails.
@@ -219,7 +223,9 @@ public class BarcodeScannerActivity extends AppCompatActivity {
                 });
                 provider.unbindAll();
                 camera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis);
+                CrashLogger.log("CAMERA", "Rear camera successfully bound to lifecycle");
             } catch (Exception e) {
+                CrashLogger.crash("Failed to initialize or bind rear camera", e);
                 Toast.makeText(this, label("cameraError") + ": " + e.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
                 finish();
             }
@@ -236,6 +242,8 @@ public class BarcodeScannerActivity extends AppCompatActivity {
     @Override public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == CAMERA_PERMISSION_REQUEST) {
+            CrashLogger.log("PERMISSION", "Camera permission result count=" + grantResults.length
+                    + ", granted=" + (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED));
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) startCamera();
             else {
                 Toast.makeText(this, label("permission"), Toast.LENGTH_LONG).show();
@@ -246,6 +254,7 @@ public class BarcodeScannerActivity extends AppCompatActivity {
     }
 
     @Override protected void onDestroy() {
+        CrashLogger.log("LIFECYCLE", "BarcodeScannerActivity onDestroy; finishing=" + isFinishing());
         if (analysisExecutor != null) analysisExecutor.shutdown();
         if (scanner != null) scanner.close();
         super.onDestroy();
