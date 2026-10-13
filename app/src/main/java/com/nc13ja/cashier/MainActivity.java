@@ -147,6 +147,7 @@ public class MainActivity extends Activity {
         try {
             Intent intent = new Intent(this, BarcodeScannerActivity.class);
             intent.putExtra("prompt", prompt);
+            intent.putExtra("language", language);
             startActivityForResult(intent, BARCODE_REQUEST);
         } catch (Exception e) {
             dialog().setTitle(tr("Scanner indisponible"))
