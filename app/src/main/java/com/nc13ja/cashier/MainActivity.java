@@ -194,7 +194,8 @@ public class MainActivity extends Activity {
         LinearLayout c=card();metric(c,"Fond de caisse initial",money(openingCash));metric(c,"Ventes du jour",money(todaySales));metric(c,"Ventes espèces",money(cashSales));metric(c,"Ventes carte",money(cardSales));
         addButtonRow(c,"＋ Apport de caisse",()->cashMoveDialog("Apport"));addButtonRow(c,"− Dépense / retrait",()->cashMoveDialog("Sortie"));addButtonRow(c,"Définir le fond de caisse",()->openingCashDialog());
         double expected=openingCash+cashSales;for(CashMove m:cashMoves)if(m.time.startsWith(today()))expected+=m.type.equals("Apport")?m.amount:-m.amount;
-        addButtonRow(c,"Clôturer la caisse / compter l'espèce",()->closeShift(expected));
+        final double expectedCash = expected;
+        addButtonRow(c,"Clôturer la caisse / compter l'espèce",()->closeShift(expectedCash));
         title("Pièces de caisse récentes");int shown=0;for(int i=cashMoves.size()-1;i>=0&&shown<15;i--){CashMove m=cashMoves.get(i);LinearLayout item=card();item.addView(text(m.type+" · "+money(m.amount),15,true));small(item,m.time+" · "+m.note);shown++;}
     }
     private void metric(LinearLayout c,String label,String value){LinearLayout r=row();TextView l=text(label,14,false);l.setTextColor(muted);r.addView(l,new LinearLayout.LayoutParams(0,-2,1));r.addView(text(value,15,true));c.addView(r);View v=new View(this);v.setBackgroundColor(line);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(1));p.topMargin=dp(8);p.bottomMargin=dp(8);c.addView(v,p);}
