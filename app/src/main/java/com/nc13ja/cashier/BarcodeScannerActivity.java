@@ -42,11 +42,14 @@ public class BarcodeScannerActivity extends Activity {
     private Camera camera;
     private final AtomicBoolean barcodeHandled = new AtomicBoolean(false);
     private boolean torchOn = false;
+    private String language = "fr";
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(Color.rgb(12, 25, 35));
         getWindow().setNavigationBarColor(Color.rgb(12, 25, 35));
+        language = getIntent().getStringExtra("language");
+        if (language == null) language = "fr";
         analysisExecutor = Executors.newSingleThreadExecutor();
         BarcodeScannerOptions options = new BarcodeScannerOptions.Builder()
                 .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS).build();
@@ -57,6 +60,52 @@ public class BarcodeScannerActivity extends Activity {
         } else {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST);
         }
+    }
+
+
+    private String label(String key) {
+        if ("ar".equals(language)) {
+            switch (key) {
+                case "title": return "ماسح الباركود";
+                case "hint": return "ضع الباركود داخل مجال الكاميرا";
+                case "torch": return "☼  تشغيل الفلاش";
+                case "torchOn": return "☼  الفلاش يعمل";
+                case "noFlash": return "الفلاش غير متوفر";
+                case "cameraError": return "تعذر تشغيل الكاميرا";
+                case "permission": return "يلزم السماح بالكاميرا لمسح الباركود";
+            }
+        } else if ("en".equals(language)) {
+            switch (key) {
+                case "title": return "Barcode scanner";
+                case "hint": return "Place the barcode inside the camera view";
+                case "torch": return "☼  Flashlight";
+                case "torchOn": return "☼  Flashlight on";
+                case "noFlash": return "Flashlight not available";
+                case "cameraError": return "Could not start camera";
+                case "permission": return "Camera permission is required to scan barcodes";
+            }
+        } else if ("ja".equals(language)) {
+            switch (key) {
+                case "title": return "バーコードスキャナー";
+                case "hint": return "バーコードをカメラの枠内に置いてください";
+                case "torch": return "☼  フラッシュ";
+                case "torchOn": return "☼  フラッシュ点灯中";
+                case "noFlash": return "フラッシュを利用できません";
+                case "cameraError": return "カメラを起動できません";
+                case "permission": return "バーコード読み取りにはカメラの許可が必要です";
+            }
+        } else {
+            switch (key) {
+                case "title": return "Lecteur de code-barres";
+                case "hint": return "Placez le code-barres dans le cadre";
+                case "torch": return "☼  Lampe torche";
+                case "torchOn": return "☼  Lampe allumée";
+                case "noFlash": return "Lampe torche indisponible";
+                case "cameraError": return "Impossible de démarrer la caméra";
+                case "permission": return "L'autorisation de la caméra est nécessaire";
+            }
+        }
+        return key;
     }
 
     private int dp(float value) {
@@ -78,7 +127,7 @@ public class BarcodeScannerActivity extends Activity {
         TextView close = actionText("✕", 22);
         top.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
         close.setOnClickListener(v -> finish());
-        TextView title = actionText("Barcode scanner", 18);
+        TextView title = actionText(label("title"), 18);
         title.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
         top.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1));
         frame.addView(top, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
@@ -88,8 +137,8 @@ public class BarcodeScannerActivity extends Activity {
         bottom.setGravity(Gravity.CENTER);
         bottom.setPadding(dp(20), dp(18), dp(20), dp(24));
         bottom.setBackgroundColor(0xCC0C1923);
-        bottom.addView(actionText("Place the barcode inside the frame", 15));
-        TextView torch = actionText("☼  Flashlight", 15);
+        bottom.addView(actionText(label("hint"), 15));
+        TextView torch = actionText(label("torch"), 15);
         torch.setPadding(dp(18), dp(12), dp(18), dp(12));
         torch.setBackground(roundBackground(0xFF167D78));
         LinearLayout.LayoutParams torchParams = new LinearLayout.LayoutParams(-2, -2);
@@ -99,9 +148,9 @@ public class BarcodeScannerActivity extends Activity {
             if (camera != null && camera.getCameraInfo().hasFlashUnit()) {
                 torchOn = !torchOn;
                 camera.getCameraControl().enableTorch(torchOn);
-                torch.setText(torchOn ? "☼  Flashlight on" : "☼  Flashlight");
+                torch.setText(torchOn ? label("torchOn") : label("torch"));
             } else {
-                Toast.makeText(this, "Flashlight not available", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, label("noFlash"), Toast.LENGTH_SHORT).show();
             }
         });
         frame.addView(bottom, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
@@ -162,7 +211,7 @@ public class BarcodeScannerActivity extends Activity {
                 provider.unbindAll();
                 camera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis);
             } catch (Exception e) {
-                Toast.makeText(this, "Could not start camera: " + e.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
+                Toast.makeText(this, label("cameraError") + ": " + e.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
                 finish();
             }
         }, ContextCompat.getMainExecutor(this));
@@ -180,7 +229,7 @@ public class BarcodeScannerActivity extends Activity {
         if (requestCode == CAMERA_PERMISSION_REQUEST) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) startCamera();
             else {
-                Toast.makeText(this, "Camera permission is required to scan barcodes", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, label("permission"), Toast.LENGTH_LONG).show();
                 setResult(RESULT_CANCELED);
                 finish();
             }
