@@ -158,6 +158,12 @@ public class MainActivity extends Activity {
             {"Replace stock from file","استبدال الكمية بكمية الملف","Replace stock from file","ファイルの在庫数で置き換え"},
             {"Add quantities to current stock","إضافة الكميات إلى المخزون الحالي","Add quantities to current stock","現在の在庫に数量を加算"},
             {"Duplicate rows skipped","الصفوف المكررة التي تم تخطيها","Duplicate rows skipped","スキップした重複行"},
+            {"اختر طريقة التعامل مع الكميات الموجودة: استبدالها بما في الملف أو إضافة كميات الملف إليها.","اختر طريقة التعامل مع الكميات الموجودة: استبدالها بما في الملف أو إضافة كميات الملف إليها.","Choose how to handle existing quantities: replace them with file quantities or add file quantities to them.","既存数量の処理方法を選択してください：ファイルの数量で置換するか、加算します。"},
+            {"New products: ","سلع جديدة: ","New products: ","新規商品: "},
+            {"Updated products: ","سلع تم تحديثها: ","Updated products: ","更新商品: "},
+            {"Duplicate rows skipped: ","الصفوف المكررة المتخطاة: ","Duplicate rows skipped: ","スキップした重複行: "},
+            {"Quantities skipped due to overflow: ","الكميات التي تعذر جمعها بسبب تجاوز الحد: ","Quantities skipped due to overflow: ","上限超過で加算できなかった数量: "},
+            {"Existing barcodes were preserved.","تم الاحتفاظ بالباركودات الموجودة.","Existing barcodes were preserved.","既存のバーコードは保持されました。"},
             {"عدد السلع: ","عدد السلع: ","Products: ","商品数: "},
             {"   الكمية: ","   الكمية: ","   Quantity: ","   数量: "},
             {"  |  السعر: ","  |  السعر: ","  |  Price: ","  |  価格: "},
@@ -862,7 +868,7 @@ public class MainActivity extends Activity {
             if (!seenNames.add(normalizedName)) { duplicates++; continue; }
             Product found = null;
             for (Product product : products) {
-                if (product.name.trim().equalsIgnoreCase(row.name.trim())) { found = product; break; }
+                if (normalizeHeader(product.name).equals(normalizedName)) { found = product; break; }
             }
             if (found == null) {
                 products.add(new Product(id(), row.name.trim(), "Divers", "", row.price, row.stock));
@@ -883,9 +889,10 @@ public class MainActivity extends Activity {
         page = "Stock";
         render();
         dialog().setTitle(tr("Import terminé"))
-                .setMessage("تمت العملية بنجاح.\nسلع جديدة: " + added + "\nسلع تم تحديثها: " + updated
-                        + "\nالصفوف المكررة المتخطاة: " + duplicates + "\nالكميات التي تعذر جمعها بسبب تجاوز الحد: " + skippedOverflow
-                        + "\nتم الاحتفاظ بالباركودات الموجودة.")
+                .setMessage(tr("Import terminé") + "\n" + tr("New products: ") + added + "\n"
+                        + tr("Updated products: ") + updated + "\n" + tr("Duplicate rows skipped: ") + duplicates
+                        + "\n" + tr("Quantities skipped due to overflow: ") + skippedOverflow + "\n"
+                        + tr("Existing barcodes were preserved."))
                 .setPositiveButton("OK", null).show();
     }
 
