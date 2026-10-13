@@ -39,6 +39,7 @@ public class MainActivity extends Activity {
     private final ArrayList<CartLine> cart = new ArrayList<>();
     private final ArrayList<Sale> sales = new ArrayList<>();
     private final ArrayList<CashMove> cashMoves = new ArrayList<>();
+    private final ArrayList<StockMove> stockMoves = new ArrayList<>();
     private LinearLayout root, body, nav;
     private String page = "Vente", category = "Tout";
     private boolean dark = false;
@@ -268,6 +269,11 @@ public class MainActivity extends Activity {
         double amount;
         CashMove(String time, String type, String note, double amount) { this.time=time; this.type=type; this.note=note; this.amount=amount; }
     }
+    static class StockMove {
+        String time, productName, reason;
+        int delta;
+        StockMove(String time, String productName, int delta, String reason) { this.time=time; this.productName=productName; this.delta=delta; this.reason=reason; }
+    }
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -311,15 +317,18 @@ public class MainActivity extends Activity {
             for (int i=0;i<s.length();i++) { JSONObject o=s.getJSONObject(i); sales.add(new Sale(o.optString("id"),o.optString("time"),o.optString("payment"),o.optString("items"),o.optDouble("total"),o.optDouble("discount"),o.optBoolean("refunded"))); }
             JSONArray m = new JSONArray(prefs.getString("moves","[]"));
             for (int i=0;i<m.length();i++) { JSONObject o=m.getJSONObject(i); cashMoves.add(new CashMove(o.optString("time"),o.optString("type"),o.optString("note"),o.optDouble("amount"))); }
+            JSONArray sm = new JSONArray(prefs.getString("stockMoves","[]"));
+            for (int i=0;i<sm.length();i++) { JSONObject o=sm.getJSONObject(i); stockMoves.add(new StockMove(o.optString("time"),o.optString("productName"),o.optInt("delta"),o.optString("reason"))); }
         } catch(Exception ignored) { }
     }
     private void saveData() {
         try {
-            JSONArray p=new JSONArray(), s=new JSONArray(), m=new JSONArray();
+            JSONArray p=new JSONArray(), s=new JSONArray(), m=new JSONArray(), sm=new JSONArray();
             for(Product x:products){ JSONObject o=new JSONObject(); o.put("id",x.id);o.put("name",x.name);o.put("category",x.category);o.put("barcode",x.barcode);o.put("price",x.price);o.put("stock",x.stock);p.put(o); }
             for(Sale x:sales){ JSONObject o=new JSONObject();o.put("id",x.id);o.put("time",x.time);o.put("payment",x.payment);o.put("items",x.items);o.put("total",x.total);o.put("discount",x.discount);o.put("refunded",x.refunded);s.put(o); }
             for(CashMove x:cashMoves){ JSONObject o=new JSONObject();o.put("time",x.time);o.put("type",x.type);o.put("note",x.note);o.put("amount",x.amount);m.put(o); }
-            prefs.edit().putString("products",p.toString()).putString("sales",s.toString()).putString("moves",m.toString()).putLong("openingCash",Double.doubleToLongBits(openingCash)).putBoolean("dark",dark).putInt("lowStockThreshold",lowStockThreshold).apply();
+            for(StockMove x:stockMoves){ JSONObject o=new JSONObject();o.put("time",x.time);o.put("productName",x.productName);o.put("delta",x.delta);o.put("reason",x.reason);sm.put(o); }
+            prefs.edit().putString("products",p.toString()).putString("sales",s.toString()).putString("moves",m.toString()).putString("stockMoves",sm.toString()).putLong("openingCash",Double.doubleToLongBits(openingCash)).putBoolean("dark",dark).putInt("lowStockThreshold",lowStockThreshold).apply();
         } catch(Exception ignored) { }
     }
 
@@ -386,7 +395,7 @@ public class MainActivity extends Activity {
     private void addByCode(String q){if(q.trim().isEmpty())return;for(Product p:products)if(p.name.toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT))||p.barcode.equals(q.trim())){addToCart(p);return;}toast("Produit introuvable");}
     private void addToCart(Product p){if(p.stock<=0){toast("Rupture de stock");return;}for(CartLine c:cart)if(c.product==p){if(c.qty<p.stock)c.qty++;else toast("Stock insuffisant");render();return;}cart.add(new CartLine(p,1));render();}
     private void checkout(String payment){if(cart.isEmpty()){toast("Panier vide");return;}for(CartLine c:cart)if(c.qty>c.product.stock){toast("Stock insuffisant : "+c.product.name);return;}
-        double total=cartTotal();StringBuilder items=new StringBuilder();for(CartLine c:cart){if(items.length()>0)items.append(", ");items.append(c.product.name).append(" x").append(c.qty);c.product.stock-=c.qty;}
+        double total=cartTotal();StringBuilder items=new StringBuilder();for(CartLine c:cart){if(items.length()>0)items.append(", ");items.append(c.product.name).append(" x").append(c.qty);c.product.stock-=c.qty;recordStockMove(c.product.name,-c.qty,"Vente");}
         Sale s=new Sale(id(),now(),payment,items.toString(),total,discountPercent,false);sales.add(s);String receipt="CASHIER\n"+now()+"\n"+items+"\nRemise : "+discountPercent+"%\nTOTAL : "+money(total)+"\nPaiement : "+payment+"\nMerci !";
         cart.clear();discountPercent=0;saveData();dialog().setTitle("Vente enregistrée").setMessage(receipt).setPositiveButton("OK",(d,w)->{page="Vente";render();}).show();
     }
@@ -414,7 +423,9 @@ public class MainActivity extends Activity {
             JSONObject o = new JSONObject();
             o.put("time", x.time); o.put("type", x.type); o.put("note", x.note); o.put("amount", x.amount); m.put(o);
         }
-        backup.put("products", p); backup.put("sales", ss); backup.put("moves", m);
+        JSONArray sm = new JSONArray();
+        for (StockMove x : stockMoves) { JSONObject o = new JSONObject(); o.put("time",x.time); o.put("productName",x.productName); o.put("delta",x.delta); o.put("reason",x.reason); sm.put(o); }
+        backup.put("products", p); backup.put("sales", ss); backup.put("moves", m); backup.put("stockMoves", sm);
         backup.put("openingCash", openingCash); backup.put("dark", dark);
         backup.put("language", language); backup.put("lowStockThreshold", lowStockThreshold);
         return backup;
@@ -503,6 +514,7 @@ public class MainActivity extends Activity {
             ArrayList<Product> restoredProducts = new ArrayList<>();
             ArrayList<Sale> restoredSales = new ArrayList<>();
             ArrayList<CashMove> restoredMoves = new ArrayList<>();
+            ArrayList<StockMove> restoredStockMoves = new ArrayList<>();
             for (int i=0;i<pa.length();i++) {
                 JSONObject o=pa.getJSONObject(i);
                 String name=o.optString("name").trim();
@@ -520,6 +532,8 @@ public class MainActivity extends Activity {
                 JSONObject o=ma.getJSONObject(i);
                 restoredMoves.add(new CashMove(o.optString("time"),o.optString("type"),o.optString("note"),o.optDouble("amount")));
             }
+            JSONArray sma = backup.optJSONArray("stockMoves");
+            if (sma != null) for (int i=0;i<sma.length();i++) { JSONObject o=sma.getJSONObject(i); restoredStockMoves.add(new StockMove(o.optString("time"),o.optString("productName"),o.optInt("delta"),o.optString("reason"))); }
             double restoredOpening = backup.optDouble("openingCash", 0);
             int restoredThreshold = Math.max(0, backup.optInt("lowStockThreshold", 3));
             String restoredLanguage = backup.optString("language", "fr");
@@ -537,6 +551,7 @@ public class MainActivity extends Activity {
                         products.clear(); products.addAll(restoredProducts);
                         sales.clear(); sales.addAll(restoredSales);
                         cashMoves.clear(); cashMoves.addAll(restoredMoves);
+                        stockMoves.clear(); stockMoves.addAll(restoredStockMoves);
                         openingCash=finalOpening; lowStockThreshold=finalThreshold;
                         dark=backup.optBoolean("dark", false); language=finalLanguage;
                         cart.clear(); discountPercent=0; category="Tout"; page="Vente";
@@ -755,10 +770,13 @@ public class MainActivity extends Activity {
             }
             if (found == null) {
                 products.add(new Product(id(), row.name.trim(), "Divers", "", row.price, row.stock));
+                recordStockMove(row.name.trim(), row.stock, "Import Excel");
                 added++;
             } else {
+                int delta = row.stock - found.stock;
                 found.price = row.price;
                 found.stock = row.stock;
+                recordStockMove(found.name, delta, "Mise à jour Excel");
                 updated++;
             }
         }
@@ -772,14 +790,38 @@ public class MainActivity extends Activity {
                 .setPositiveButton("OK", null).show();
     }
 
+    private void recordStockMove(String productName, int delta, String reason) {
+        if (delta != 0) stockMoves.add(new StockMove(now(), productName, delta, reason));
+    }
+
+    private void showStockHistory() {
+        StringBuilder history = new StringBuilder();
+        int shown = 0;
+        for (int i = stockMoves.size() - 1; i >= 0 && shown < 40; i--, shown++) {
+            StockMove move = stockMoves.get(i);
+            if (shown > 0) history.append("\n\n");
+            history.append(move.time).append("\n").append(move.productName)
+                    .append("  ").append(move.delta > 0 ? "+" : "").append(move.delta)
+                    .append("\n").append(move.reason);
+        }
+        if (history.length() == 0) history.append("لا توجد حركات مخزون مسجلة بعد.");
+        ScrollView scroll = new ScrollView(this);
+        TextView content = text(history.toString(), 14, false);
+        content.setPadding(dp(16), dp(12), dp(16), dp(12));
+        scroll.addView(content);
+        dialog().setTitle(tr("Stock movement history")).setView(scroll)
+                .setPositiveButton("OK", null).show();
+    }
+
     private void stockPage(){
         title("Stock & produits");LinearLayout actions=card();addButtonRow(actions,"＋ Ajouter un produit",()->productDialog(null));
         addButtonRow(actions,"Importer un fichier Excel (.xlsx)",()->startExcelImport());
+        addButtonRow(actions,"Stock movement history",()->showStockHistory());
         addButtonRow(actions,"Scanner un code-barres pour rechercher",()->startBarcodeScan(tr("Scannez un produit")));
         int low=0;for(Product p:products)if(p.stock<=lowStockThreshold)low++;
         TextView warning=text(low+" produit(s) à stock faible (≤ "+lowStockThreshold+")",14,true);warning.setTextColor(low>0?Color.rgb(225,125,35):BLUE);actions.addView(warning);
         for(Product p:new ArrayList<>(products)){LinearLayout c=card();TextView n=text(p.name,17,true);c.addView(n);small(c,p.category+" · "+money(p.price)+" · Code : "+(p.barcode.isEmpty()?"—":p.barcode));TextView st=text("Stock : "+p.stock,14,true);st.setTextColor(p.stock<=lowStockThreshold?Color.rgb(225,80,70):BLUE);c.addView(st);
-            LinearLayout rr=row();TextView edit=button("Modifier",()->productDialog(p));rr.addView(edit,new LinearLayout.LayoutParams(0,-2,1));TextView del=button("Supprimer",()->dialog().setMessage("Supprimer "+p.name+" ?").setNegativeButton("Annuler",null).setPositiveButton("Supprimer",(d,w)->{products.remove(p);saveData();render();}).show());LinearLayout.LayoutParams dp=new LinearLayout.LayoutParams(0,-2,1);dp.leftMargin=dp(8);rr.addView(del,dp);c.addView(rr);
+            LinearLayout rr=row();TextView edit=button("Modifier",()->productDialog(p));rr.addView(edit,new LinearLayout.LayoutParams(0,-2,1));TextView del=button("Supprimer",()->dialog().setMessage("Supprimer "+p.name+" ?").setNegativeButton("Annuler",null).setPositiveButton("Supprimer",(d,w)->{recordStockMove(p.name,-p.stock,"Suppression produit");products.remove(p);saveData();render();}).show());LinearLayout.LayoutParams dp=new LinearLayout.LayoutParams(0,-2,1);dp.leftMargin=dp(8);rr.addView(del,dp);c.addView(rr);
         }
     }
     private void productDialog(Product existing){ productDialog(existing, false); }
@@ -795,7 +837,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams scanParams=new LinearLayout.LayoutParams(-2,dp(48));scanParams.leftMargin=dp(8);barcodeRow.addView(scanBarcode,scanParams);form.addView(barcodeRow);
         form.addView(price,new LinearLayout.LayoutParams(-1,dp(52)));form.addView(stock,new LinearLayout.LayoutParams(-1,dp(52)));
         if(existing!=null){name.setText(existing.name);cat.setText(existing.category);barcode.setText(existing.barcode);price.setText(String.valueOf(existing.price));stock.setText(String.valueOf(existing.stock));}
-        dialog().setTitle(existing==null?"Nouveau produit":"Modifier le produit").setView(form).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{String n=name.getText().toString().trim();double pr=Double.parseDouble(price.getText().toString());int qty=Integer.parseInt(stock.getText().toString());if(n.isEmpty()||pr<0||qty<0)throw new Exception();String bc=barcode.getText().toString().trim();if(!bc.isEmpty()){for(Product p:products)if(p!=existing&&bc.equals(p.barcode))throw new IllegalArgumentException("duplicate barcode");}if(existing==null)products.add(new Product(id(),n,cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim(),bc,pr,qty));else{existing.name=n;existing.category=cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim();existing.barcode=bc;existing.price=pr;existing.stock=qty;if(isNewScannedProduct)products.add(existing);}saveData();render();}catch(Exception ex){toast("Vérifiez le nom, le prix et le stock");}}).show();
+        dialog().setTitle(existing==null?"Nouveau produit":"Modifier le produit").setView(form).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{String n=name.getText().toString().trim();double pr=Double.parseDouble(price.getText().toString());int qty=Integer.parseInt(stock.getText().toString());if(n.isEmpty()||pr<0||qty<0)throw new Exception();String bc=barcode.getText().toString().trim();if(!bc.isEmpty()){for(Product p:products)if(p!=existing&&bc.equals(p.barcode))throw new IllegalArgumentException("duplicate barcode");}if(existing==null){products.add(new Product(id(),n,cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim(),bc,pr,qty));recordStockMove(n,qty,"Création produit");}else{int delta=qty-existing.stock;existing.name=n;existing.category=cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim();existing.barcode=bc;existing.price=pr;existing.stock=qty;if(delta!=0)recordStockMove(n,delta,"Ajustement manuel");if(isNewScannedProduct){products.add(existing);recordStockMove(n,qty,"Création par scan");}}saveData();render();}catch(Exception ex){toast("Vérifiez le nom, le prix et le stock");}}).show();
     }
 
     private void cashPage(){
@@ -836,7 +878,7 @@ public class MainActivity extends Activity {
         ArrayList<String> names=new ArrayList<>(popular.keySet());names.sort((a,b)->Integer.compare(popular.get(b),popular.get(a)));if(names.isEmpty()){LinearLayout c=card();small(c,"Aucune vente enregistrée pour le moment.");}else for(int i=0;i<Math.min(5,names.size());i++){LinearLayout c=card();c.addView(text((i+1)+". "+names.get(i)+" · "+popular.get(names.get(i))+" unité(s)",15,true));}
         title("Dernières transactions");int shown=0;for(int i=sales.size()-1;i>=0&&shown<12;i--){Sale s=sales.get(i);LinearLayout c=card();c.addView(text((s.refunded?"REMBOURSÉ · ":"")+money(s.total)+" · "+s.payment,15,true));small(c,s.time+"\n"+s.items+"\nRemise : "+s.discount+"%");if(!s.refunded)addButtonRow(c,"Rembourser cette vente",()->refundSale(s));shown++;}
     }
-    private void refundSale(Sale s){dialog().setTitle("Confirmer le remboursement").setMessage("Rembourser "+money(s.total)+" et remettre les produits en stock ?").setNegativeButton("Annuler",null).setPositiveButton("Rembourser",(d,w)->{if(s.refunded)return;s.refunded=true;try{for(String it:s.items.split(", ")){int ix=it.lastIndexOf(" x");if(ix>0){String n=it.substring(0,ix);int q=Integer.parseInt(it.substring(ix+2));for(Product p:products)if(p.name.equals(n)){p.stock+=q;break;}}}}catch(Exception ignored){}cashMoves.add(new CashMove(now(),"Remboursement","Vente "+s.id,s.total));saveData();render();toast("Remboursement enregistré");}).show();}
+    private void refundSale(Sale s){dialog().setTitle("Confirmer le remboursement").setMessage("Rembourser "+money(s.total)+" et remettre les produits en stock ?").setNegativeButton("Annuler",null).setPositiveButton("Rembourser",(d,w)->{if(s.refunded)return;s.refunded=true;try{for(String it:s.items.split(", ")){int ix=it.lastIndexOf(" x");if(ix>0){String n=it.substring(0,ix);int q=Integer.parseInt(it.substring(ix+2));for(Product p:products)if(p.name.equals(n)){p.stock+=q;recordStockMove(p.name,q,"Remboursement");break;}}}}catch(Exception ignored){}cashMoves.add(new CashMove(now(),"Remboursement","Vente "+s.id,s.total));saveData();render();toast("Remboursement enregistré");}).show();}
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == BACKUP_EXPORT_REQUEST) {
