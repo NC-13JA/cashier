@@ -12,8 +12,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.*;
-import com.google.zxing.integration.android.IntentIntegrator;
-import com.google.zxing.integration.android.IntentResult;
+import android.content.Intent;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.text.SimpleDateFormat;
@@ -143,14 +142,12 @@ public class MainActivity extends Activity {
             else if (which == 3) dialog().setTitle(tr("About Cashier")).setMessage(tr("Cashier works offline and stores data on this device.")).setPositiveButton("OK", null).show();
         }).setNegativeButton(tr("Annuler"), null).show();
     }
+    private static final int BARCODE_REQUEST = 7101;
     private void startBarcodeScan(String prompt) {
         try {
-            IntentIntegrator scanner = new IntentIntegrator(this);
-            scanner.setPrompt(prompt);
-            scanner.setBeepEnabled(false);
-            scanner.setOrientationLocked(false);
-            scanner.setDesiredBarcodeFormats(IntentIntegrator.ALL_CODE_TYPES);
-            scanner.initiateScan();
+            Intent intent = new Intent(this, BarcodeScannerActivity.class);
+            intent.putExtra("prompt", prompt);
+            startActivityForResult(intent, BARCODE_REQUEST);
         } catch (Exception e) {
             dialog().setTitle(tr("Scanner indisponible"))
                     .setMessage(tr("Camera permission may be needed") + "\n" + e.getClass().getSimpleName())
@@ -173,7 +170,7 @@ public class MainActivity extends Activity {
 
     private double discountPercent = 0;
     private double openingCash = 0;
-    private final int BLUE = Color.rgb(48, 105, 235);
+    private final int BLUE = Color.rgb(0, 150, 136);
     private int bg, panel, fg, muted, line;
 
     static class Product {
@@ -259,16 +256,23 @@ public class MainActivity extends Activity {
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setLayoutDirection(language.equals("ar") ? View.LAYOUT_DIRECTION_RTL : View.LAYOUT_DIRECTION_LTR); root.setBackgroundColor(bg);
         setContentView(root);
         LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL); header.setPadding(dp(18),dp(12),dp(18),dp(10));
-        TextView brand = text("Cashier",22,true); header.addView(brand,new LinearLayout.LayoutParams(0,dp(44),1));
+        LinearLayout brandBlock = new LinearLayout(this); brandBlock.setOrientation(LinearLayout.VERTICAL); brandBlock.setGravity(Gravity.CENTER_VERTICAL);
+        TextView brand = text("CASHIER",20,true); brand.setLetterSpacing(0.06f); brandBlock.addView(brand);
+        TextView subtitle = text("POINT DE VENTE  •  DA",10,true); subtitle.setTextColor(muted); brandBlock.addView(subtitle);
+        header.addView(brandBlock,new LinearLayout.LayoutParams(0,dp(48),1));
         TextView lang = text("🌐",22,true); lang.setGravity(Gravity.CENTER); lang.setBackground(shape(panel,16)); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(44),dp(44)); lp.leftMargin=dp(5); lp.rightMargin=dp(5); header.addView(lang,lp); lang.setOnClickListener(v->chooseLanguage());
         TextView settings = text("⚙",22,true); settings.setGravity(Gravity.CENTER); settings.setBackground(shape(panel,16)); LinearLayout.LayoutParams setp = new LinearLayout.LayoutParams(dp(44),dp(44)); setp.rightMargin=dp(5); header.addView(settings,setp); settings.setOnClickListener(v->settingsDialog());
         TextView mode = text(dark ? "☀" : "☾",24,true); mode.setGravity(Gravity.CENTER); mode.setBackground(shape(panel,16)); header.addView(mode,new LinearLayout.LayoutParams(dp(44),dp(44)));
         mode.setOnClickListener(v->{dark=!dark;saveData();render();}); root.addView(header);
         body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(14),dp(4),dp(14),dp(12));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.addView(body);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        nav = new LinearLayout(this);nav.setPadding(dp(5),dp(6),dp(5),dp(6));nav.setBackgroundColor(panel);
+        nav = new LinearLayout(this);nav.setPadding(dp(5),dp(6),dp(5),dp(6));nav.setBackground(shape(panel,18));
         String[] tabs={"Vente","Stock","Caisse","Rapports"};
-        for(String t:tabs){TextView b=text((t.equals(page)?"● ":"")+t,13,true);b.setGravity(Gravity.CENTER);b.setPadding(dp(3),dp(12),dp(3),dp(12));b.setTextColor(t.equals(page)?BLUE:muted);nav.addView(b,new LinearLayout.LayoutParams(0,-2,1));b.setOnClickListener(v->{page=t;render();});}
+        String[] icons={"▣","▦","◉","▤"};
+        for(int i=0;i<tabs.length;i++){final String t=tabs[i];LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(dp(2),dp(7),dp(2),dp(7));item.setBackground(t.equals(page)?shape(dark?Color.rgb(21,70,69):Color.rgb(220,246,242),13):shape(panel,13));
+            TextView ico=text(icons[i],18,true);ico.setGravity(Gravity.CENTER);ico.setTextColor(t.equals(page)?BLUE:muted);item.addView(ico);
+            TextView label=text(t,11,true);label.setGravity(Gravity.CENTER);label.setTextColor(t.equals(page)?BLUE:muted);item.addView(label);
+            LinearLayout.LayoutParams itemParams=new LinearLayout.LayoutParams(0,-2,1);itemParams.setMargins(dp(3),0,dp(3),0);nav.addView(item,itemParams);item.setOnClickListener(v->{page=t;render();});}
         root.addView(nav);
         if(page.equals("Vente")) salePage(); else if(page.equals("Stock")) stockPage(); else if(page.equals("Caisse")) cashPage(); else reportPage();
     }
@@ -357,32 +361,29 @@ public class MainActivity extends Activity {
         title("Dernières transactions");int shown=0;for(int i=sales.size()-1;i>=0&&shown<12;i--){Sale s=sales.get(i);LinearLayout c=card();c.addView(text((s.refunded?"REMBOURSÉ · ":"")+money(s.total)+" · "+s.payment,15,true));small(c,s.time+"\n"+s.items+"\nRemise : "+s.discount+"%");if(!s.refunded)addButtonRow(c,"Rembourser cette vente",()->refundSale(s));shown++;}
     }
     private void refundSale(Sale s){dialog().setTitle("Confirmer le remboursement").setMessage("Rembourser "+money(s.total)+" et remettre les produits en stock ?").setNegativeButton("Annuler",null).setPositiveButton("Rembourser",(d,w)->{if(s.refunded)return;s.refunded=true;try{for(String it:s.items.split(", ")){int ix=it.lastIndexOf(" x");if(ix>0){String n=it.substring(0,ix);int q=Integer.parseInt(it.substring(ix+2));for(Product p:products)if(p.name.equals(n)){p.stock+=q;break;}}}}catch(Exception ignored){}cashMoves.add(new CashMove(now(),"Remboursement","Vente "+s.id,s.total));saveData();render();toast("Remboursement enregistré");}).show();}
-    @Override protected void onActivityResult(int requestCode,int resultCode,android.content.Intent data) {
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        try {
-            IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
-            if (result == null) return;
-            if (result.getContents() == null) { if (resultCode == RESULT_OK) toast("No barcode was returned"); return; }
-            String code = result.getContents().trim();
-            if (code.isEmpty()) { toast("No barcode was returned"); return; }
-            Product matched = null;
-            for (Product p : products) if (code.equals(p.barcode)) { matched = p; break; }
-            if (matched != null) {
-                page = "Vente";
-                addToCart(matched);
-                return;
-            }
-            final String scannedCode = code;
-            dialog().setTitle("Code-barres scanné").setMessage(scannedCode+"\nProduit inconnu. Voulez-vous créer le produit ?")
-                .setNegativeButton("Annuler", null)
-                .setPositiveButton("Créer", (d,w) -> {
-                    Product draft = new Product(id(), "Produit "+scannedCode, "Divers", scannedCode, 0, 0);
-                    productDialog(draft, true);
-                }).show();
-        } catch (Exception e) {
-            dialog().setTitle("Scanner indisponible").setMessage(e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()))
-                .setPositiveButton("OK", null).show();
+        if (requestCode != BARCODE_REQUEST || resultCode != RESULT_OK || data == null) return;
+        String code = data.getStringExtra(BarcodeScannerActivity.EXTRA_BARCODE);
+        if (code == null || code.trim().isEmpty()) {
+            toast("No barcode was returned");
+            return;
         }
+        code = westernDigits(code.trim());
+        Product matched = null;
+        for (Product p : products) if (code.equals(p.barcode)) { matched = p; break; }
+        if (matched != null) {
+            page = "Vente";
+            addToCart(matched);
+            return;
+        }
+        final String scannedCode = code;
+        dialog().setTitle("Code-barres scanné").setMessage(scannedCode+"\nProduit inconnu. Voulez-vous créer le produit ?")
+            .setNegativeButton("Annuler", null)
+            .setPositiveButton("Créer", (d,w) -> {
+                Product draft = new Product(id(), "Produit "+scannedCode, "Divers", scannedCode, 0, 0);
+                productDialog(draft, true);
+            }).show();
     }
     private void toast(String s){Toast.makeText(this,tr(s),Toast.LENGTH_SHORT).show();}
 }
