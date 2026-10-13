@@ -364,7 +364,7 @@ public class MainActivity extends Activity {
         for(EditText e:beforeBarcode)form.addView(e,new LinearLayout.LayoutParams(-1,dp(52)));
         LinearLayout barcodeRow=new LinearLayout(this);barcodeRow.setOrientation(LinearLayout.HORIZONTAL);barcodeRow.setGravity(Gravity.CENTER_VERTICAL);
         barcodeRow.addView(barcode,new LinearLayout.LayoutParams(0,dp(52),1));
-        TextView scanBarcode=button("Scan barcode",()->{scanningForProductBarcode=true;startBarcodeScan(tr("Scannez le code-barres"));});
+        TextView scanBarcode=button("Scanner",()->{scanningForProductBarcode=true;productBarcodeField=barcode;startBarcodeScan(tr("Scannez le code-barres"));});
         LinearLayout.LayoutParams scanParams=new LinearLayout.LayoutParams(-2,dp(48));scanParams.leftMargin=dp(8);barcodeRow.addView(scanBarcode,scanParams);form.addView(barcodeRow);
         form.addView(price,new LinearLayout.LayoutParams(-1,dp(52)));form.addView(stock,new LinearLayout.LayoutParams(-1,dp(52)));
         if(existing!=null){name.setText(existing.name);cat.setText(existing.category);barcode.setText(existing.barcode);price.setText(String.valueOf(existing.price));stock.setText(String.valueOf(existing.stock));}
