@@ -163,6 +163,8 @@ public class MainActivity extends Activity {
             {"Updated products: ","سلع تم تحديثها: ","Updated products: ","更新商品: "},
             {"Duplicate rows skipped: ","الصفوف المكررة المتخطاة: ","Duplicate rows skipped: ","スキップした重複行: "},
             {"Quantities skipped due to overflow: ","الكميات التي تعذر جمعها بسبب تجاوز الحد: ","Quantities skipped due to overflow: ","上限超過で加算できなかった数量: "},
+            {"Achat : ","الشراء: ","Cost: ","仕入: "},
+            {"Marge : ","الهامش: ","Margin: ","利益幅: "},
             {"Existing barcodes were preserved.","تم الاحتفاظ بالباركودات الموجودة.","Existing barcodes were preserved.","既存のバーコードは保持されました。"},
             {"عدد السلع: ","عدد السلع: ","Products: ","商品数: "},
             {"   الكمية: ","   الكمية: ","   Quantity: ","   数量: "},
@@ -928,7 +930,7 @@ public class MainActivity extends Activity {
         int low=0;for(Product p:products)if(p.stock<=lowStockThreshold)low++;
         TextView warning=text(low+" produit(s) à stock faible (≤ "+lowStockThreshold+")",14,true);warning.setTextColor(low>0?Color.rgb(225,125,35):BLUE);actions.addView(warning);
         ArrayList<LinearLayout> productCards=new ArrayList<>();ArrayList<Product> cardProducts=new ArrayList<>();
-        for(Product p:new ArrayList<>(products)){LinearLayout c=card();productCards.add(c);cardProducts.add(p);TextView n=text(p.name,17,true);c.addView(n);small(c,p.category+" · "+money(p.price)+" · Code : "+(p.barcode.isEmpty()?"—":p.barcode));TextView st=text("Stock : "+p.stock,14,true);st.setTextColor(p.stock<=lowStockThreshold?Color.rgb(225,80,70):BLUE);c.addView(st);
+        for(Product p:new ArrayList<>(products)){LinearLayout c=card();productCards.add(c);cardProducts.add(p);TextView n=text(p.name,17,true);c.addView(n);small(c,p.category+" · "+money(p.price)+" · Achat : "+(p.costPrice<0?"—":money(p.costPrice))+(p.costPrice<0?"":" · Marge : "+money(p.price-p.costPrice))+" · Code : "+(p.barcode.isEmpty()?"—":p.barcode));TextView st=text("Stock : "+p.stock,14,true);st.setTextColor(p.stock<=lowStockThreshold?Color.rgb(225,80,70):BLUE);c.addView(st);
             LinearLayout rr=row();TextView edit=button("Modifier",()->productDialog(p));rr.addView(edit,new LinearLayout.LayoutParams(0,-2,1));TextView del=button("Supprimer",()->dialog().setMessage("Supprimer "+p.name+" ?").setNegativeButton("Annuler",null).setPositiveButton("Supprimer",(d,w)->{recordStockMove(p.name,-p.stock,"Suppression produit");products.remove(p);saveData();render();}).show());LinearLayout.LayoutParams dp=new LinearLayout.LayoutParams(0,-2,1);dp.leftMargin=dp(8);rr.addView(del,dp);c.addView(rr);
         }
         stockSearch.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence a,int st,int count,int after){} public void onTextChanged(CharSequence value,int start,int before,int count){String q=value.toString().trim().toLowerCase(Locale.ROOT);for(int i=0;i<productCards.size();i++){Product p=cardProducts.get(i);boolean match=q.isEmpty()||p.name.toLowerCase(Locale.ROOT).contains(q)||p.barcode.toLowerCase(Locale.ROOT).contains(q);productCards.get(i).setVisibility(match?View.VISIBLE:View.GONE);}}public void afterTextChanged(Editable e){}});
