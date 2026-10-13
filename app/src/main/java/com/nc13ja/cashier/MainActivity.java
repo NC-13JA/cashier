@@ -425,7 +425,7 @@ public class MainActivity extends Activity {
         Sale s=new Sale(id(),now(),payment,items.toString(),total,discountPercent,false,costTotal);sales.add(s);String receipt="CASHIER\n"+now()+"\n"+items+"\nRemise : "+discountPercent+"%\nTOTAL : "+money(total)+"\nPaiement : "+payment+"\nMerci !";
         cart.clear();discountPercent=0;saveData();dialog().setTitle("Vente enregistrée").setMessage(receipt).setNegativeButton(tr("Print receipt"),(d,w)->printReceipt(receipt)).setNeutralButton(tr("Share receipt"),(d,w)->shareReceipt(receipt)).setPositiveButton("OK",(d,w)->{page="Vente";render();}).show();
     }
-    private void discountDialog(){EditText e=input("Remise en % (0 à 100)",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);e.setText(String.valueOf(discountPercent));dialog().setTitle("Remise rapide").setView(e).setNegativeButton("Annuler",null).setPositiveButton("Appliquer",(d,w)->{try{discountPercent=Math.max(0,Math.min(100,Double.parseDouble(e.getText().toString())));}catch(Exception ignored){}render();}).show();}
+    private void discountDialog(){EditText e=input("Remise en % (0 à 100)",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);e.setText(String.valueOf(discountPercent));dialog().setTitle("Remise rapide").setView(e).setNegativeButton("Annuler",null).setPositiveButton("Appliquer",(d,w)->{try{double value=Double.parseDouble(westernDigits(e.getText().toString().trim()));if(!Double.isFinite(value))throw new Exception();discountPercent=Math.max(0,Math.min(100,value));}catch(Exception ignored){toast("Montant invalide");}render();}).show();}
 
 
 
@@ -531,11 +531,13 @@ public class MainActivity extends Activity {
     }
 
     private String buildSalesCsv() {
-        StringBuilder csv = new StringBuilder("\uFEFFDate;ID;Paiement;Articles;Total_DA;Remise_pct;Remboursée\n");
+        StringBuilder csv = new StringBuilder("\uFEFFDate;ID;Paiement;Articles;Total_DA;Coût_DA;Profit_DA;Remise_pct;Remboursée\n");
         for (Sale sale : sales) {
             csv.append(csvCell(sale.time)).append(';').append(csvCell(sale.id)).append(';')
                     .append(csvCell(sale.payment)).append(';').append(csvCell(sale.items)).append(';')
                     .append(String.format(Locale.US, "%.2f", sale.total)).append(';')
+                    .append(sale.costTotal < 0 ? "" : String.format(Locale.US, "%.2f", sale.costTotal)).append(';')
+                    .append(sale.costTotal < 0 ? "" : String.format(Locale.US, "%.2f", sale.total - sale.costTotal)).append(';')
                     .append(String.format(Locale.US, "%.2f", sale.discount)).append(';')
                     .append(sale.refunded ? "Oui" : "Non").append('\n');
         }
@@ -705,7 +707,7 @@ public class MainActivity extends Activity {
                 .replace("\u00A0", "").replace("٫", ".").replace("٬", ",");
         value = value.replaceAll("[^0-9,.-]", "");
         if (value.isEmpty() || value.equals("-") || value.equals(".") || value.equals(",")) throw new Exception("number");
-        if (value.contains(",") && value.contains(".")) value = value.replace(",", "");
+        if (value.contains(",") && value.contains(".")) { if (value.lastIndexOf(',') > value.lastIndexOf('.')) value = value.replace(".", "").replace(",", "."); else value = value.replace(",", ""); }
         else if (value.contains(",")) {
             int comma = value.lastIndexOf(',');
             int digitsAfter = value.length() - comma - 1;
@@ -808,9 +810,11 @@ public class MainActivity extends Activity {
             try {
                 String quantity = qtyCol < values.size() ? values.get(qtyCol) : "";
                 String priceText = priceCol < values.size() ? values.get(priceCol) : "";
-                int qty = (int)Math.round(parseExcelNumber(quantity));
+                double qtyValue = parseExcelNumber(quantity);
+                if (qtyValue < 0 || qtyValue > Integer.MAX_VALUE || qtyValue != Math.rint(qtyValue)) continue;
+                int qty = (int)qtyValue;
                 double price = parseExcelNumber(priceText);
-                if (qty < 0 || price < 0 || !Double.isFinite(price)) continue;
+                if (price < 0 || !Double.isFinite(price)) continue;
                 result.add(new ImportRow(name, qty, price));
             } catch (Exception ignored) { }
         }
@@ -918,7 +922,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams scanParams=new LinearLayout.LayoutParams(-2,dp(48));scanParams.leftMargin=dp(8);barcodeRow.addView(scanBarcode,scanParams);form.addView(barcodeRow);
         form.addView(price,new LinearLayout.LayoutParams(-1,dp(52)));form.addView(cost,new LinearLayout.LayoutParams(-1,dp(52)));form.addView(stock,new LinearLayout.LayoutParams(-1,dp(52)));
         if(existing!=null){name.setText(existing.name);cat.setText(existing.category);barcode.setText(existing.barcode);price.setText(String.valueOf(existing.price));if(existing.costPrice>=0)cost.setText(String.valueOf(existing.costPrice));stock.setText(String.valueOf(existing.stock));}
-        dialog().setTitle(existing==null?"Nouveau produit":"Modifier le produit").setView(form).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{String n=name.getText().toString().trim();double pr=Double.parseDouble(westernDigits(price.getText().toString()));String costText=westernDigits(cost.getText().toString().trim());double cp=costText.isEmpty()?-1:Double.parseDouble(costText);int qty=Integer.parseInt(westernDigits(stock.getText().toString()));if(n.isEmpty()||pr<0||cp < -1||qty<0)throw new Exception();String bc=barcode.getText().toString().trim();if(!bc.isEmpty()){for(Product p:products)if(p!=existing&&bc.equals(p.barcode))throw new IllegalArgumentException("duplicate barcode");}if(existing==null){products.add(new Product(id(),n,cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim(),bc,pr,qty,cp));recordStockMove(n,qty,"Création produit");}else{int delta=qty-existing.stock;existing.name=n;existing.category=cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim();existing.barcode=bc;existing.price=pr;existing.costPrice=cp;existing.stock=qty;if(isNewScannedProduct){products.add(existing);recordStockMove(n,qty,"Création par scan");}else if(delta!=0)recordStockMove(n,delta,"Ajustement manuel");}saveData();render();}catch(Exception ex){toast("Vérifiez le nom, le prix et le stock");}}).show();
+        dialog().setTitle(existing==null?"Nouveau produit":"Modifier le produit").setView(form).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{String n=name.getText().toString().trim();double pr=Double.parseDouble(westernDigits(price.getText().toString()));String costText=westernDigits(cost.getText().toString().trim());double cp=costText.isEmpty()?-1:Double.parseDouble(costText);int qty=Integer.parseInt(westernDigits(stock.getText().toString()));if(n.isEmpty()||pr<0||!Double.isFinite(pr)||cp < -1||(cp>=0&&!Double.isFinite(cp))||qty<0)throw new Exception();String bc=barcode.getText().toString().trim();if(!bc.isEmpty()){for(Product p:products)if(p!=existing&&bc.equals(p.barcode))throw new IllegalArgumentException("duplicate barcode");}if(existing==null){products.add(new Product(id(),n,cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim(),bc,pr,qty,cp));recordStockMove(n,qty,"Création produit");}else{int delta=qty-existing.stock;existing.name=n;existing.category=cat.getText().toString().trim().isEmpty()?"Divers":cat.getText().toString().trim();existing.barcode=bc;existing.price=pr;existing.costPrice=cp;existing.stock=qty;if(isNewScannedProduct){products.add(existing);recordStockMove(n,qty,"Création par scan");}else if(delta!=0)recordStockMove(n,delta,"Ajustement manuel");}saveData();render();}catch(Exception ex){toast("Vérifiez le nom, le prix et le stock");}}).show();
     }
 
     private void cashPage(){
@@ -931,7 +935,7 @@ public class MainActivity extends Activity {
         title("Pièces de caisse récentes");int shown=0;for(int i=cashMoves.size()-1;i>=0&&shown<15;i--){CashMove m=cashMoves.get(i);LinearLayout item=card();item.addView(text(m.type+" · "+money(m.amount),15,true));small(item,m.time+" · "+m.note);shown++;}
     }
     private void metric(LinearLayout c,String label,String value){LinearLayout r=row();TextView l=text(label,14,false);l.setTextColor(muted);r.addView(l,new LinearLayout.LayoutParams(0,-2,1));r.addView(text(value,15,true));c.addView(r);View v=new View(this);v.setBackgroundColor(line);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(1));p.topMargin=dp(8);p.bottomMargin=dp(8);c.addView(v,p);}
-    private void cashMoveDialog(String type){LinearLayout f=new LinearLayout(this);f.setOrientation(LinearLayout.VERTICAL);EditText amount=input("Montant en DA",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);EditText note=input("Motif / référence",InputType.TYPE_CLASS_TEXT);f.addView(amount);f.addView(note);dialog().setTitle(type+" de caisse").setView(f).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{double a=Double.parseDouble(amount.getText().toString());if(a<=0)throw new Exception();cashMoves.add(new CashMove(now(),type,note.getText().toString(),a));saveData();render();}catch(Exception e){toast("Montant invalide");}}).show();}
+    private void cashMoveDialog(String type){LinearLayout f=new LinearLayout(this);f.setOrientation(LinearLayout.VERTICAL);EditText amount=input("Montant en DA",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);EditText note=input("Motif / référence",InputType.TYPE_CLASS_TEXT);f.addView(amount);f.addView(note);dialog().setTitle(type+" de caisse").setView(f).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{double a=Double.parseDouble(westernDigits(amount.getText().toString().trim()));if(!Double.isFinite(a)||a<=0)throw new Exception();cashMoves.add(new CashMove(now(),type,note.getText().toString(),a));saveData();render();}catch(Exception e){toast("Montant invalide");}}).show();}
     private void configureLowStockThreshold() {
         EditText field = input("Low stock alert limit", InputType.TYPE_CLASS_NUMBER);
         field.setText(String.valueOf(lowStockThreshold));
@@ -948,8 +952,8 @@ public class MainActivity extends Activity {
                 }).show();
     }
 
-    private void openingCashDialog(){EditText e=input("Fond de caisse en DA",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);e.setText(String.valueOf(openingCash));dialog().setTitle("Fond de caisse initial").setView(e).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{openingCash=Math.max(0,Double.parseDouble(e.getText().toString()));saveData();render();}catch(Exception ex){toast("Montant invalide");}}).show();}
-    private void closeShift(double expected){EditText actual=input("Espèces réellement comptées (DA)",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);dialog().setTitle("Clôture de caisse").setMessage("Espèces théoriques : "+money(expected)).setView(actual).setNegativeButton("Annuler",null).setPositiveButton("Comparer",(d,w)->{try{double a=Double.parseDouble(actual.getText().toString());String result="Théorique : "+money(expected)+"\nCompté : "+money(a)+"\nÉcart : "+money(a-expected)+"\n"+now();dialog().setTitle("Résultat de clôture").setMessage(result).setPositiveButton("OK",null).show();cashMoves.add(new CashMove(now(),"Clôture", "Compté "+money(a)+" / théorique "+money(expected)+" / écart "+money(a-expected),0));saveData();}catch(Exception e){toast("Montant invalide");}}).show();}
+    private void openingCashDialog(){EditText e=input("Fond de caisse en DA",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);e.setText(String.valueOf(openingCash));dialog().setTitle("Fond de caisse initial").setView(e).setNegativeButton("Annuler",null).setPositiveButton("Enregistrer",(d,w)->{try{double value=Double.parseDouble(westernDigits(e.getText().toString().trim()));if(!Double.isFinite(value)||value<0)throw new Exception();openingCash=value;saveData();render();}catch(Exception ex){toast("Montant invalide");}}).show();}
+    private void closeShift(double expected){EditText actual=input("Espèces réellement comptées (DA)",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);dialog().setTitle("Clôture de caisse").setMessage("Espèces théoriques : "+money(expected)).setView(actual).setNegativeButton("Annuler",null).setPositiveButton("Comparer",(d,w)->{try{double a=Double.parseDouble(westernDigits(actual.getText().toString().trim()));if(!Double.isFinite(a)||a<0)throw new Exception();String result="Théorique : "+money(expected)+"\nCompté : "+money(a)+"\nÉcart : "+money(a-expected)+"\n"+now();dialog().setTitle("Résultat de clôture").setMessage(result).setPositiveButton("OK",null).show();cashMoves.add(new CashMove(now(),"Clôture", "Compté "+money(a)+" / théorique "+money(expected)+" / écart "+money(a-expected),0));saveData();}catch(Exception e){toast("Montant invalide");}}).show();}
 
     private void reportPage(){
         title("Rapports & statistiques");double day=0,week=0;int count=0;long seven=System.currentTimeMillis()-7L*24*60*60*1000;
