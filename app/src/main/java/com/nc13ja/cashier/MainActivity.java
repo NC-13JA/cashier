@@ -153,7 +153,12 @@ public class MainActivity extends Activity {
             {"Print receipt","طباعة الفاتورة","Print receipt","レシートを印刷"},
             {"Share receipt","مشاركة الفاتورة","Share receipt","レシートを共有"},
             {"Export inventory CSV","تصدير المخزون CSV","Export inventory CSV","在庫CSVをエクスポート"},
-            {"Search product name or barcode","ابحث باسم المنتج أو الباركود","Search product name or barcode","商品名またはバーコードを検索"}
+            {"Search product name or barcode","ابحث باسم المنتج أو الباركود","Search product name or barcode","商品名またはバーコードを検索"},
+            {"عدد السلع: ","عدد السلع: ","Products: ","商品数: "},
+            {"   الكمية: ","   الكمية: ","   Quantity: ","   数量: "},
+            {"  |  السعر: ","  |  السعر: ","  |  Price: ","  |  価格: "},
+            {"... و ","... و ","... and ","... 他 "},
+            {"سيتم تحديث السعر والكمية للسلع المطابقة بالاسم مع الاحتفاظ بالباركود الحالي. السلع الجديدة ستُضاف دون باركود. لن يتم حذف أي سلعة.","سيتم تحديث السعر والكمية للسلع المطابقة بالاسم مع الاحتفاظ بالباركود الحالي. السلع الجديدة ستُضاف دون باركود. لن يتم حذف أي سلعة.","Matching products will have their price and stock updated while keeping existing barcodes. New products will be added without a barcode. No products will be deleted.","一致する商品の価格と在庫を更新し、既存のバーコードを保持します。新しい商品はバーコードなしで追加されます。商品は削除されません。"}
         };
         int idx = language.equals("ar") ? 1 : language.equals("en") ? 2 : 3;
         String out = s;
@@ -819,16 +824,16 @@ public class MainActivity extends Activity {
             return;
         }
         StringBuilder preview = new StringBuilder();
-        preview.append("عدد السلع: ").append(imported.size()).append("\\n\\n");
+        preview.append("عدد السلع: ").append(imported.size()).append("\n\n");
         int limit = Math.min(imported.size(), 8);
         for (int i = 0; i < limit; i++) {
             ImportRow row = imported.get(i);
             preview.append(i + 1).append(". ").append(row.name)
-                    .append("\\n   الكمية: ").append(row.stock)
-                    .append("  |  السعر: ").append(money(row.price)).append("\\n");
+                    .append("\n   الكمية: ").append(row.stock)
+                    .append("  |  السعر: ").append(money(row.price)).append("\n");
         }
-        if (imported.size() > limit) preview.append("\\n... و ").append(imported.size() - limit).append(" سلع أخرى");
-        preview.append("\\n\\nسيتم تحديث السعر والكمية للسلع المطابقة بالاسم مع الاحتفاظ بالباركود الحالي. السلع الجديدة ستُضاف دون باركود. لن يتم حذف أي سلعة.");
+        if (imported.size() > limit) preview.append("\n... و ").append(imported.size() - limit).append(" سلع أخرى");
+        preview.append("\n\nسيتم تحديث السعر والكمية للسلع المطابقة بالاسم مع الاحتفاظ بالباركود الحالي. السلع الجديدة ستُضاف دون باركود. لن يتم حذف أي سلعة.");
         dialog().setTitle(tr("Aperçu de l'importation")).setMessage(preview.toString())
                 .setNegativeButton(tr("Annuler"), null)
                 .setPositiveButton(tr("Importer"), (d, w) -> applyExcelImport(imported)).show();
@@ -858,8 +863,8 @@ public class MainActivity extends Activity {
         page = "Stock";
         render();
         dialog().setTitle(tr("Import terminé"))
-                .setMessage("تمت العملية بنجاح.\\nسلع جديدة: " + added + "\\nسلع تم تحديثها: " + updated
-                        + "\\nتم الاحتفاظ بالباركودات الموجودة.")
+                .setMessage("تمت العملية بنجاح.\nسلع جديدة: " + added + "\nسلع تم تحديثها: " + updated
+                        + "\nتم الاحتفاظ بالباركودات الموجودة.")
                 .setPositiveButton("OK", null).show();
     }
 
