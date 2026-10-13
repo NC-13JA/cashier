@@ -155,6 +155,9 @@ public class MainActivity extends Activity {
             {"Export inventory CSV","تصدير المخزون CSV","Export inventory CSV","在庫CSVをエクスポート"},
             {"Search product name or barcode","ابحث باسم المنتج أو الباركود","Search product name or barcode","商品名またはバーコードを検索"},
             {"No products yet. Add a product or import your Excel file.","لا توجد منتجات بعد. أضف منتجًا أو استورد ملف Excel.","No products yet. Add a product or import your Excel file.","商品がありません。商品を追加するか、Excelファイルを読み込んでください。"},
+            {"Replace stock from file","استبدال الكمية بكمية الملف","Replace stock from file","ファイルの在庫数で置き換え"},
+            {"Add quantities to current stock","إضافة الكميات إلى المخزون الحالي","Add quantities to current stock","現在の在庫に数量を加算"},
+            {"Duplicate rows skipped","الصفوف المكررة التي تم تخطيها","Duplicate rows skipped","スキップした重複行"},
             {"عدد السلع: ","عدد السلع: ","Products: ","商品数: "},
             {"   الكمية: ","   الكمية: ","   Quantity: ","   数量: "},
             {"  |  السعر: ","  |  السعر: ","  |  Price: ","  |  価格: "},
@@ -844,14 +847,19 @@ public class MainActivity extends Activity {
         }
         if (imported.size() > limit) preview.append("\n... و ").append(imported.size() - limit).append(" سلع أخرى");
         preview.append("\n\nسيتم تحديث السعر والكمية للسلع المطابقة بالاسم مع الاحتفاظ بالباركود الحالي. السلع الجديدة ستُضاف دون باركود. لن يتم حذف أي سلعة.");
+        preview.append("\n\nاختر طريقة التعامل مع الكميات الموجودة: استبدالها بما في الملف أو إضافة كميات الملف إليها.");
         dialog().setTitle(tr("Aperçu de l'importation")).setMessage(preview.toString())
                 .setNegativeButton(tr("Annuler"), null)
-                .setPositiveButton(tr("Importer"), (d, w) -> applyExcelImport(imported)).show();
+                .setPositiveButton(tr("Replace stock from file"), (d, w) -> applyExcelImport(imported, false))
+                .setNeutralButton(tr("Add quantities to current stock"), (d, w) -> applyExcelImport(imported, true)).show();
     }
 
-    private void applyExcelImport(ArrayList<ImportRow> imported) {
-        int added = 0, updated = 0;
+    private void applyExcelImport(ArrayList<ImportRow> imported, boolean addQuantities) {
+        int added = 0, updated = 0, duplicates = 0, skippedOverflow = 0;
+        java.util.HashSet<String> seenNames = new java.util.HashSet<>();
         for (ImportRow row : imported) {
+            String normalizedName = normalizeHeader(row.name);
+            if (!seenNames.add(normalizedName)) { duplicates++; continue; }
             Product found = null;
             for (Product product : products) {
                 if (product.name.trim().equalsIgnoreCase(row.name.trim())) { found = product; break; }
@@ -861,10 +869,12 @@ public class MainActivity extends Activity {
                 recordStockMove(row.name.trim(), row.stock, "Import Excel");
                 added++;
             } else {
-                int delta = row.stock - found.stock;
+                if (addQuantities && row.stock > Integer.MAX_VALUE - found.stock) { skippedOverflow++; continue; }
+                int previousStock = found.stock;
                 found.price = row.price;
-                found.stock = row.stock;
-                recordStockMove(found.name, delta, "Mise à jour Excel");
+                found.stock = addQuantities ? previousStock + row.stock : row.stock;
+                int delta = found.stock - previousStock;
+                recordStockMove(found.name, delta, addQuantities ? "Ajout depuis Excel" : "Mise à jour Excel");
                 updated++;
             }
         }
@@ -874,6 +884,7 @@ public class MainActivity extends Activity {
         render();
         dialog().setTitle(tr("Import terminé"))
                 .setMessage("تمت العملية بنجاح.\nسلع جديدة: " + added + "\nسلع تم تحديثها: " + updated
+                        + "\nالصفوف المكررة المتخطاة: " + duplicates + "\nالكميات التي تعذر جمعها بسبب تجاوز الحد: " + skippedOverflow
                         + "\nتم الاحتفاظ بالباركودات الموجودة.")
                 .setPositiveButton("OK", null).show();
     }
