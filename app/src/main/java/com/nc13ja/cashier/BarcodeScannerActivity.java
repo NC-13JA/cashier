@@ -40,6 +40,8 @@ public class BarcodeScannerActivity extends AppCompatActivity {
     private ExecutorService analysisExecutor;
     private BarcodeScanner scanner;
     private Camera camera;
+    private TextView cameraSwitch;
+    private boolean useFrontCamera = false;
     private final AtomicBoolean barcodeHandled = new AtomicBoolean(false);
     private boolean torchOn = false;
     private String language = "fr";
@@ -68,6 +70,7 @@ public class BarcodeScannerActivity extends AppCompatActivity {
         if ("ar".equals(language)) {
             switch (key) {
                 case "title": return "ماسح الباركود";
+                case "switchCamera": return "⇄ الكاميرا الأمامية";
                 case "hint": return "ضع الباركود داخل مجال الكاميرا";
                 case "torch": return "☼  تشغيل الفلاش";
                 case "torchOn": return "☼  الفلاش يعمل";
@@ -78,6 +81,7 @@ public class BarcodeScannerActivity extends AppCompatActivity {
         } else if ("en".equals(language)) {
             switch (key) {
                 case "title": return "Barcode scanner";
+                case "switchCamera": return "⇄ Front camera";
                 case "hint": return "Place the barcode inside the camera view";
                 case "torch": return "☼  Flashlight";
                 case "torchOn": return "☼  Flashlight on";
@@ -88,6 +92,7 @@ public class BarcodeScannerActivity extends AppCompatActivity {
         } else if ("ja".equals(language)) {
             switch (key) {
                 case "title": return "バーコードスキャナー";
+                case "switchCamera": return "⇄ 前面カメラ";
                 case "hint": return "バーコードをカメラの枠内に置いてください";
                 case "torch": return "☼  フラッシュ";
                 case "torchOn": return "☼  フラッシュ点灯中";
@@ -98,6 +103,7 @@ public class BarcodeScannerActivity extends AppCompatActivity {
         } else {
             switch (key) {
                 case "title": return "Lecteur de code-barres";
+                case "switchCamera": return "⇄ Caméra avant";
                 case "hint": return "Placez le code-barres dans le cadre";
                 case "torch": return "☼  Lampe torche";
                 case "torchOn": return "☼  Lampe allumée";
@@ -131,6 +137,19 @@ public class BarcodeScannerActivity extends AppCompatActivity {
         TextView title = actionText(label("title"), 18);
         title.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
         top.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1));
+        cameraSwitch = actionText(label("switchCamera"), 13);
+        cameraSwitch.setPadding(dp(8), dp(8), dp(8), dp(8));
+        cameraSwitch.setBackground(roundBackground(0xFF167D78));
+        top.addView(cameraSwitch, new LinearLayout.LayoutParams(-2, dp(44)));
+        cameraSwitch.setOnClickListener(v -> {
+            useFrontCamera = !useFrontCamera;
+            cameraSwitch.setText(useFrontCamera
+                    ? ("ar".equals(language) ? "⇄ الكاميرا الخلفية"
+                    : "en".equals(language) ? "⇄ Rear camera"
+                    : "ja".equals(language) ? "⇄ 背面カメラ" : "⇄ Caméra arrière")
+                    : label("switchCamera"));
+            startCamera();
+        });
         frame.addView(top, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
 
         LinearLayout bottom = new LinearLayout(this);
@@ -176,7 +195,7 @@ public class BarcodeScannerActivity extends AppCompatActivity {
     }
 
     private void startCamera() {
-        CrashLogger.log("CAMERA", "Requesting rear camera provider");
+        CrashLogger.log("CAMERA", "Requesting " + (useFrontCamera ? "front" : "rear") + " camera provider");
         ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(this);
         future.addListener(() -> {
             try {
@@ -221,13 +240,34 @@ public class BarcodeScannerActivity extends AppCompatActivity {
                         imageProxy.close();
                     }
                 });
+                CameraSelector selector = useFrontCamera
+                        ? CameraSelector.DEFAULT_FRONT_CAMERA
+                        : CameraSelector.DEFAULT_BACK_CAMERA;
                 provider.unbindAll();
-                camera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis);
-                CrashLogger.log("CAMERA", "Rear camera successfully bound to lifecycle");
+                if (!provider.hasCamera(selector)) {
+                    if (useFrontCamera) {
+                        Toast.makeText(this, "ar".equals(language) ? "الكاميرا الأمامية غير متاحة على هذا الجهاز"
+                                : "Front camera is not available on this device", Toast.LENGTH_LONG).show();
+                        useFrontCamera = false;
+                        if (cameraSwitch != null) cameraSwitch.setText(label("switchCamera"));
+                        startCamera();
+                        return;
+                    }
+                    throw new IllegalStateException("Rear camera is not available");
+                }
+                camera = provider.bindToLifecycle(this, selector, preview, analysis);
+                CrashLogger.log("CAMERA", (useFrontCamera ? "Front" : "Rear") + " camera successfully bound to lifecycle");
             } catch (Exception e) {
-                CrashLogger.crash("Failed to initialize or bind rear camera", e);
-                Toast.makeText(this, label("cameraError") + ": " + e.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
-                finish();
+                CrashLogger.crash("Failed to initialize or bind " + (useFrontCamera ? "front" : "rear") + " camera", e);
+                if (useFrontCamera) {
+                    useFrontCamera = false;
+                    if (cameraSwitch != null) cameraSwitch.setText(label("switchCamera"));
+                    Toast.makeText(this, "Front camera could not start; switching back to rear camera", Toast.LENGTH_LONG).show();
+                    startCamera();
+                } else {
+                    Toast.makeText(this, label("cameraError") + ": " + e.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
+                    finish();
+                }
             }
         }, ContextCompat.getMainExecutor(this));
     }
