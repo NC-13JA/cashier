@@ -154,6 +154,7 @@ public class MainActivity extends Activity {
             {"Share receipt","مشاركة الفاتورة","Share receipt","レシートを共有"},
             {"Export inventory CSV","تصدير المخزون CSV","Export inventory CSV","在庫CSVをエクスポート"},
             {"Search product name or barcode","ابحث باسم المنتج أو الباركود","Search product name or barcode","商品名またはバーコードを検索"},
+            {"No products yet. Add a product or import your Excel file.","لا توجد منتجات بعد. أضف منتجًا أو استورد ملف Excel.","No products yet. Add a product or import your Excel file.","商品がありません。商品を追加するか、Excelファイルを読み込んでください。"},
             {"عدد السلع: ","عدد السلع: ","Products: ","商品数: "},
             {"   الكمية: ","   الكمية: ","   Quantity: ","   数量: "},
             {"  |  السعر: ","  |  السعر: ","  |  Price: ","  |  価格: "},
@@ -313,7 +314,6 @@ public class MainActivity extends Activity {
         openingCash = Double.longBitsToDouble(prefs.getLong("openingCash", Double.doubleToLongBits(0)));
         lowStockThreshold = Math.max(0, prefs.getInt("lowStockThreshold", 3));
         loadData();
-        if (products.isEmpty()) seedProducts();
         render();
     }
 
@@ -412,7 +412,7 @@ public class MainActivity extends Activity {
             TextView name=text(p.name,14,true);tile.addView(name);TextView price=text(money(p.price),14,true);price.setTextColor(BLUE);tile.addView(price);small(tile,"Stock : "+p.stock);
             LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,-2,1);tp.setMargins(dp(3),dp(3),dp(3),dp(6));gr.addView(tile,tp);tile.setOnClickListener(v->addToCart(p));shown++;
         }
-        body.addView(grid);
+        body.addView(grid);if(shown==0)small(body,"No products yet. Add a product or import your Excel file.");
         LinearLayout basket=card();LinearLayout r=row();r.addView(text("Panier",18,true),new LinearLayout.LayoutParams(0,-2,1));TextView disc=text("Remise %",13,true);disc.setTextColor(BLUE);r.addView(disc);disc.setOnClickListener(v->discountDialog());basket.addView(r);
         if(cart.isEmpty())small(basket,"Le panier est vide. Touchez un produit pour commencer.");
         for(CartLine c:new ArrayList<>(cart)){LinearLayout crw=row();TextView label=text(c.product.name+" × "+c.qty,14,false);crw.addView(label,new LinearLayout.LayoutParams(0,-2,1));TextView minus=text("−",24,true);minus.setGravity(Gravity.CENTER);minus.setTextColor(BLUE);crw.addView(minus,new LinearLayout.LayoutParams(dp(36),dp(42)));minus.setOnClickListener(v->{c.qty--;if(c.qty<=0)cart.remove(c);render();});TextView plus=text("+",22,true);plus.setGravity(Gravity.CENTER);plus.setTextColor(BLUE);crw.addView(plus,new LinearLayout.LayoutParams(dp(36),dp(42)));plus.setOnClickListener(v->{if(c.qty<c.product.stock)c.qty++;else toast("Stock insuffisant");render();});basket.addView(crw);}
@@ -595,6 +595,7 @@ public class MainActivity extends Activity {
                     || !(backup.opt("moves") instanceof JSONArray)) throw new Exception("invalid format");
             JSONArray pa = backup.getJSONArray("products"), sa = backup.getJSONArray("sales"), ma = backup.getJSONArray("moves");
             ArrayList<Product> restoredProducts = new ArrayList<>();
+            java.util.HashSet<String> restoredBarcodes = new java.util.HashSet<>();
             ArrayList<Sale> restoredSales = new ArrayList<>();
             ArrayList<CashMove> restoredMoves = new ArrayList<>();
             ArrayList<StockMove> restoredStockMoves = new ArrayList<>();
@@ -603,8 +604,10 @@ public class MainActivity extends Activity {
                 String name=o.optString("name").trim();
                 double price=o.optDouble("price", -1); int stock=o.optInt("stock", -1);
                 if(name.isEmpty() || price<0 || stock<0 || !Double.isFinite(price)) throw new Exception("invalid product");
+                String restoredBarcode=o.optString("barcode","").trim();
+                if(!restoredBarcode.isEmpty()&&!restoredBarcodes.add(restoredBarcode))throw new Exception("duplicate barcode in backup");
                 restoredProducts.add(new Product(o.optString("id", id()), name, o.optString("category","Divers"),
-                        o.optString("barcode",""), price, stock, o.has("costPrice")?o.optDouble("costPrice",-1):-1));
+                        restoredBarcode, price, stock, o.has("costPrice")?o.optDouble("costPrice",-1):-1));
             }
             for (int i=0;i<sa.length();i++) {
                 JSONObject o=sa.getJSONObject(i);
