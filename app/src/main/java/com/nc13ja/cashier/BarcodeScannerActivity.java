@@ -188,25 +188,34 @@ public class BarcodeScannerActivity extends AppCompatActivity {
                         imageProxy.close();
                         return;
                     }
-                    android.media.Image mediaImage = imageProxy.getImage();
-                    if (mediaImage == null) {
-                        imageProxy.close();
-                        return;
-                    }
-                    InputImage image = InputImage.fromMediaImage(mediaImage, imageProxy.getImageInfo().getRotationDegrees());
-                    scanner.process(image)
-                            .addOnSuccessListener(barcodes -> {
-                                if (barcodeHandled.get()) return;
-                                for (Barcode barcode : barcodes) {
-                                    String value = barcode.getRawValue();
-                                    if (value != null && !value.trim().isEmpty() && barcodeHandled.compareAndSet(false, true)) {
-                                        runOnUiThread(() -> returnBarcode(value));
-                                        break;
+                    try {
+                        android.media.Image mediaImage = imageProxy.getImage();
+                        if (mediaImage == null) {
+                            imageProxy.close();
+                            return;
+                        }
+                        InputImage image = InputImage.fromMediaImage(
+                                mediaImage, imageProxy.getImageInfo().getRotationDegrees());
+                        scanner.process(image)
+                                .addOnSuccessListener(barcodes -> {
+                                    if (barcodeHandled.get()) return;
+                                    for (Barcode barcode : barcodes) {
+                                        String value = barcode.getRawValue();
+                                        if (value != null && !value.trim().isEmpty()
+                                                && barcodeHandled.compareAndSet(false, true)) {
+                                            runOnUiThread(() -> returnBarcode(value));
+                                            break;
+                                        }
                                     }
-                                }
-                            })
-                            .addOnFailureListener(error -> android.util.Log.w("CashierScanner", "Barcode analysis failed", error))
-                            .addOnCompleteListener(task -> imageProxy.close());
+                                })
+                                .addOnFailureListener(error -> android.util.Log.w(
+                                        "CashierScanner", "Barcode analysis failed", error))
+                                .addOnCompleteListener(task -> imageProxy.close());
+                    } catch (Exception error) {
+                        // Always release the camera frame if image conversion or task startup fails.
+                        android.util.Log.e("CashierScanner", "Could not process camera frame", error);
+                        imageProxy.close();
+                    }
                 });
                 provider.unbindAll();
                 camera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis);
