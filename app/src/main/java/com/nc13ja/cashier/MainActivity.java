@@ -13,6 +13,19 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.*;
 import android.content.Intent;
+import android.net.Uri;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.text.SimpleDateFormat;
@@ -111,7 +124,14 @@ public class MainActivity extends Activity {
             {"Vérifiez le nom, le prix et le stock","تحقق من الاسم والسعر والمخزون","Check name, price and stock","商品名、価格、在庫を確認してください"},
             {"Espèces","نقدًا","Cash","現金"},{"Carte","بطاقة","Card","カード"},
             {"Apport","إيداع","Deposit","入金"},{"Sortie","سحب","Withdrawal","出金"},
-            {"Clôture","إغلاق","Closing","締め"},{"Remboursement","استرداد","Refund","返金"}
+            {"Clôture","إغلاق","Closing","締め"},{"Remboursement","استرداد","Refund","返金"},
+            {"Importer un fichier Excel (.xlsx)","استيراد ملف Excel (.xlsx)","Import Excel file (.xlsx)","Excelファイルを読み込む (.xlsx)"},
+            {"Choisir le fichier Excel","اختر ملف Excel","Choose Excel file","Excelファイルを選択"},
+            {"Aperçu de l'importation","معاينة الاستيراد","Import preview","インポートのプレビュー"},
+            {"Importer","استيراد","Import","読み込む"},
+            {"Import terminé","اكتمل الاستيراد","Import complete","インポート完了"},
+            {"Aucune ligne valide n'a été trouvée.","لم يتم العثور على صفوف صالحة.","No valid rows were found.","有効な行が見つかりません。"},
+            {"Fichier Excel illisible ou colonnes manquantes.","تعذر قراءة ملف Excel أو أن الأعمدة المطلوبة غير موجودة.","Excel file unreadable or required columns are missing.","Excelファイルを読み取れないか、必要な列がありません。"}
         };
         int idx = language.equals("ar") ? 1 : language.equals("en") ? 2 : 3;
         String out = s;
@@ -163,6 +183,11 @@ public class MainActivity extends Activity {
         builder.show();
     }
     private static final int BARCODE_REQUEST = 7101;
+    private static final int EXCEL_REQUEST = 7102;
+    private static class ImportRow {
+        String name; int stock; double price;
+        ImportRow(String name, int stock, double price) { this.name=name; this.stock=stock; this.price=price; }
+    }
     private boolean scanningForProductBarcode = false;
     private EditText productBarcodeField;
     private void startBarcodeScan(String prompt) {
@@ -346,8 +371,231 @@ public class MainActivity extends Activity {
     }
     private void discountDialog(){EditText e=input("Remise en % (0 à 100)",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);e.setText(String.valueOf(discountPercent));dialog().setTitle("Remise rapide").setView(e).setNegativeButton("Annuler",null).setPositiveButton("Appliquer",(d,w)->{try{discountPercent=Math.max(0,Math.min(100,Double.parseDouble(e.getText().toString())));}catch(Exception ignored){}render();}).show();}
 
+
+    private void startExcelImport() {
+        try {
+            Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            pick.addCategory(Intent.CATEGORY_OPENABLE);
+            pick.setType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivityForResult(pick, EXCEL_REQUEST);
+        } catch (Exception e) {
+            CrashLogger.crash("Could not open Excel picker", e);
+            dialog().setTitle(tr("Import terminé")).setMessage(tr("Fichier Excel illisible ou colonnes manquantes."))
+                    .setPositiveButton("OK", null).show();
+        }
+    }
+
+    private byte[] readZipEntry(InputStream input) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int count;
+        while ((count = input.read(buffer)) != -1) out.write(buffer, 0, count);
+        return out.toByteArray();
+    }
+
+    private Document parseXml(byte[] bytes) throws Exception {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(false);
+        try { factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true); } catch (Exception ignored) {}
+        try { factory.setFeature("http://xml.org/sax/features/external-general-entities", false); } catch (Exception ignored) {}
+        try { factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false); } catch (Exception ignored) {}
+        return factory.newDocumentBuilder().parse(new ByteArrayInputStream(bytes));
+    }
+
+    private String xmlText(Element parent, String tag) {
+        NodeList list = parent.getElementsByTagName(tag);
+        if (list.getLength() == 0) return "";
+        Node node = list.item(0);
+        return node == null ? "" : node.getTextContent();
+    }
+
+    private int excelColumnIndex(String ref) {
+        int value = 0;
+        for (int i = 0; i < ref.length(); i++) {
+            char c = Character.toUpperCase(ref.charAt(i));
+            if (c < 'A' || c > 'Z') break;
+            value = value * 26 + (c - 'A' + 1);
+        }
+        return Math.max(0, value - 1);
+    }
+
+    private String normalizeHeader(String value) {
+        if (value == null) return "";
+        return westernDigits(value).toLowerCase(Locale.ROOT)
+                .replace("ـ", "").replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+                .replace("ى", "ي").replaceAll("[\\u064B-\\u065F\\u0670]", "")
+                .replaceAll("[\\s\\p{Punct}：:()（）]", "");
+    }
+
+    private double parseExcelNumber(String raw) throws Exception {
+        String value = westernDigits(raw == null ? "" : raw).trim()
+                .replace("\u00A0", "").replace("٫", ".").replace("٬", ",");
+        value = value.replaceAll("[^0-9,.-]", "");
+        if (value.isEmpty() || value.equals("-") || value.equals(".") || value.equals(",")) throw new Exception("number");
+        if (value.contains(",") && value.contains(".")) value = value.replace(",", "");
+        else if (value.contains(",")) {
+            int comma = value.lastIndexOf(',');
+            int digitsAfter = value.length() - comma - 1;
+            if (digitsAfter == 3 && comma > 0) value = value.replace(",", "");
+            else value = value.replace(',', '.');
+        }
+        return Double.parseDouble(value);
+    }
+
+    private ArrayList<ImportRow> readExcelProducts(Uri uri) throws Exception {
+        HashMap<String, byte[]> entries = new HashMap<>();
+        try (InputStream raw = getContentResolver().openInputStream(uri);
+             ZipInputStream zip = new ZipInputStream(raw)) {
+            if (raw == null) throw new Exception("empty file");
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                String name = entry.getName();
+                if (name.equals("xl/sharedStrings.xml") || name.equals("xl/worksheets/sheet1.xml")
+                        || name.matches("xl/worksheets/sheet[0-9]+\\.xml")) {
+                    entries.put(name, readZipEntry(zip));
+                }
+                zip.closeEntry();
+            }
+        }
+        byte[] sheetBytes = entries.get("xl/worksheets/sheet1.xml");
+        if (sheetBytes == null) {
+            for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
+                if (entry.getKey().matches("xl/worksheets/sheet[0-9]+\\.xml")) { sheetBytes = entry.getValue(); break; }
+            }
+        }
+        if (sheetBytes == null) throw new Exception("worksheet missing");
+
+        ArrayList<String> shared = new ArrayList<>();
+        byte[] sharedBytes = entries.get("xl/sharedStrings.xml");
+        if (sharedBytes != null) {
+            Document sharedDoc = parseXml(sharedBytes);
+            NodeList items = sharedDoc.getElementsByTagName("si");
+            for (int i = 0; i < items.getLength(); i++) {
+                Node item = items.item(i);
+                StringBuilder value = new StringBuilder();
+                if (item instanceof Element) {
+                    NodeList textNodes = ((Element)item).getElementsByTagName("t");
+                    for (int j = 0; j < textNodes.getLength(); j++) value.append(textNodes.item(j).getTextContent());
+                }
+                shared.add(value.toString());
+            }
+        }
+
+        Document sheet = parseXml(sheetBytes);
+        NodeList rowNodes = sheet.getElementsByTagName("row");
+        ArrayList<ArrayList<String>> rows = new ArrayList<>();
+        for (int i = 0; i < rowNodes.getLength(); i++) {
+            Node rowNode = rowNodes.item(i);
+            if (!(rowNode instanceof Element)) continue;
+            NodeList cells = ((Element)rowNode).getElementsByTagName("c");
+            ArrayList<String> values = new ArrayList<>();
+            for (int j = 0; j < cells.getLength(); j++) {
+                Element cell = (Element)cells.item(j);
+                int col = excelColumnIndex(cell.getAttribute("r"));
+                while (values.size() <= col) values.add("");
+                String type = cell.getAttribute("t");
+                String value;
+                if ("s".equals(type)) {
+                    String index = xmlText(cell, "v");
+                    int sharedIndex = index.isEmpty() ? -1 : Integer.parseInt(index);
+                    value = sharedIndex >= 0 && sharedIndex < shared.size() ? shared.get(sharedIndex) : "";
+                } else if ("inlineStr".equals(type)) {
+                    NodeList textNodes = cell.getElementsByTagName("t");
+                    StringBuilder textValue = new StringBuilder();
+                    for (int k = 0; k < textNodes.getLength(); k++) textValue.append(textNodes.item(k).getTextContent());
+                    value = textValue.toString();
+                } else {
+                    value = xmlText(cell, "v");
+                }
+                values.set(col, value == null ? "" : value.trim());
+            }
+            rows.add(values);
+        }
+        if (rows.isEmpty()) throw new Exception("no rows");
+
+        int headerRow = -1, nameCol = -1, qtyCol = -1, priceCol = -1;
+        for (int r = 0; r < Math.min(rows.size(), 6); r++) {
+            ArrayList<String> values = rows.get(r);
+            int n = -1, q = -1, p = -1;
+            for (int c = 0; c < values.size(); c++) {
+                String h = normalizeHeader(values.get(c));
+                if (h.contains("تعيينالسلع") || h.contains("سلع") || h.contains("designation") || h.contains("produit") || h.equals("item") || h.equals("product") || h.contains("nomduproduit")) n = c;
+                if (h.contains("الكمية") || h.contains("quantite") || h.contains("quantity") || h.equals("qty") || h.contains("stock")) q = c;
+                if (h.contains("ثمنالبيع") || h.contains("prixdevente") || h.contains("sellingprice") || h.equals("price") || h.contains("prixunitaire")) p = c;
+            }
+            if (n >= 0 && q >= 0 && p >= 0) { headerRow = r; nameCol = n; qtyCol = q; priceCol = p; break; }
+        }
+        if (headerRow < 0) throw new Exception("required headers missing");
+
+        ArrayList<ImportRow> result = new ArrayList<>();
+        for (int r = headerRow + 1; r < rows.size(); r++) {
+            ArrayList<String> values = rows.get(r);
+            String name = nameCol < values.size() ? values.get(nameCol).trim() : "";
+            if (name.isEmpty()) continue;
+            try {
+                String quantity = qtyCol < values.size() ? values.get(qtyCol) : "";
+                String priceText = priceCol < values.size() ? values.get(priceCol) : "";
+                int qty = (int)Math.round(parseExcelNumber(quantity));
+                double price = parseExcelNumber(priceText);
+                if (qty < 0 || price < 0 || !Double.isFinite(price)) continue;
+                result.add(new ImportRow(name, qty, price));
+            } catch (Exception ignored) { }
+        }
+        return result;
+    }
+
+    private void previewExcelImport(ArrayList<ImportRow> imported) {
+        if (imported.isEmpty()) {
+            dialog().setTitle(tr("Aperçu de l'importation")).setMessage(tr("Aucune ligne valide n'a été trouvée."))
+                    .setPositiveButton("OK", null).show();
+            return;
+        }
+        StringBuilder preview = new StringBuilder();
+        preview.append("عدد السلع: ").append(imported.size()).append("\\n\\n");
+        int limit = Math.min(imported.size(), 8);
+        for (int i = 0; i < limit; i++) {
+            ImportRow row = imported.get(i);
+            preview.append(i + 1).append(". ").append(row.name)
+                    .append("\\n   الكمية: ").append(row.stock)
+                    .append("  |  السعر: ").append(money(row.price)).append("\\n");
+        }
+        if (imported.size() > limit) preview.append("\\n... و ").append(imported.size() - limit).append(" سلع أخرى");
+        preview.append("\\n\\nسيتم تحديث السعر والكمية للسلع المطابقة بالاسم مع الاحتفاظ بالباركود الحالي. السلع الجديدة ستُضاف دون باركود. لن يتم حذف أي سلعة.");
+        dialog().setTitle(tr("Aperçu de l'importation")).setMessage(preview.toString())
+                .setNegativeButton(tr("Annuler"), null)
+                .setPositiveButton(tr("Importer"), (d, w) -> applyExcelImport(imported)).show();
+    }
+
+    private void applyExcelImport(ArrayList<ImportRow> imported) {
+        int added = 0, updated = 0;
+        for (ImportRow row : imported) {
+            Product found = null;
+            for (Product product : products) {
+                if (product.name.trim().equalsIgnoreCase(row.name.trim())) { found = product; break; }
+            }
+            if (found == null) {
+                products.add(new Product(id(), row.name.trim(), "Divers", "", row.price, row.stock));
+                added++;
+            } else {
+                found.price = row.price;
+                found.stock = row.stock;
+                updated++;
+            }
+        }
+        products.sort((a, b) -> a.name.compareToIgnoreCase(b.name));
+        saveData();
+        page = "Stock";
+        render();
+        dialog().setTitle(tr("Import terminé"))
+                .setMessage("تمت العملية بنجاح.\\nسلع جديدة: " + added + "\\nسلع تم تحديثها: " + updated
+                        + "\\nتم الاحتفاظ بالباركودات الموجودة.")
+                .setPositiveButton("OK", null).show();
+    }
+
     private void stockPage(){
         title("Stock & produits");LinearLayout actions=card();addButtonRow(actions,"＋ Ajouter un produit",()->productDialog(null));
+        addButtonRow(actions,"Importer un fichier Excel (.xlsx)",()->startExcelImport());
         addButtonRow(actions,"Scanner un code-barres pour rechercher",()->startBarcodeScan(tr("Scannez un produit")));
         int low=0;for(Product p:products)if(p.stock<=3)low++;
         TextView warning=text(low+" produit(s) à stock faible (≤ 3)",14,true);warning.setTextColor(low>0?Color.rgb(225,125,35):BLUE);actions.addView(warning);
@@ -396,6 +644,21 @@ public class MainActivity extends Activity {
     private void refundSale(Sale s){dialog().setTitle("Confirmer le remboursement").setMessage("Rembourser "+money(s.total)+" et remettre les produits en stock ?").setNegativeButton("Annuler",null).setPositiveButton("Rembourser",(d,w)->{if(s.refunded)return;s.refunded=true;try{for(String it:s.items.split(", ")){int ix=it.lastIndexOf(" x");if(ix>0){String n=it.substring(0,ix);int q=Integer.parseInt(it.substring(ix+2));for(Product p:products)if(p.name.equals(n)){p.stock+=q;break;}}}}catch(Exception ignored){}cashMoves.add(new CashMove(now(),"Remboursement","Vente "+s.id,s.total));saveData();render();toast("Remboursement enregistré");}).show();}
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == EXCEL_REQUEST) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                Uri uri = data.getData();
+                try {
+                    ArrayList<ImportRow> imported = readExcelProducts(uri);
+                    previewExcelImport(imported);
+                } catch (Exception e) {
+                    CrashLogger.crash("Excel inventory import failed", e);
+                    dialog().setTitle(tr("Aperçu de l'importation"))
+                            .setMessage(tr("Fichier Excel illisible ou colonnes manquantes.") + "\n" + e.getClass().getSimpleName())
+                            .setPositiveButton("OK", null).show();
+                }
+            }
+            return;
+        }
         if (requestCode != BARCODE_REQUEST) return;
         if (scanningForProductBarcode) {
             scanningForProductBarcode = false;
