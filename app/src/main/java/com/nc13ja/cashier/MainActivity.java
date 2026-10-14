@@ -1,5 +1,25 @@
 package com.nc13ja.cashier;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.camera.core.CameraSelector;
+import androidx.camera.core.ImageAnalysis;
+import androidx.camera.core.Preview;
+import androidx.camera.lifecycle.ProcessCameraProvider;
+import androidx.camera.view.PreviewView;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.mlkit.vision.barcode.BarcodeScanner;
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions;
+import com.google.mlkit.vision.barcode.BarcodeScanning;
+import com.google.mlkit.vision.barcode.common.Barcode;
+import com.google.mlkit.vision.common.InputImage;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import android.os.Handler;
+import android.os.Looper;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
@@ -38,7 +58,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Locale;
 
-public class MainActivity extends Activity {
+public class MainActivity extends AppCompatActivity {
     private SharedPreferences prefs;
     private final ArrayList<Product> products = new ArrayList<>();
     private final ArrayList<CartLine> cart = new ArrayList<>();
@@ -50,6 +70,14 @@ public class MainActivity extends Activity {
     private boolean dark = false;
     private String language = "fr";
     private int lowStockThreshold = 3;
+    private static final int LIVE_CAMERA_PERMISSION_REQUEST = 7303;
+    private PreviewView livePreviewView;
+    private ProcessCameraProvider liveCameraProvider;
+    private BarcodeScanner liveBarcodeScanner;
+    private ExecutorService liveAnalysisExecutor;
+    private final Handler liveScanHandler = new Handler(Looper.getMainLooper());
+    private String lastLiveBarcode = "";
+    private long lastLiveBarcodeAt = 0L;
     private String westernDigits(String s) {
         if (s == null) return null;
         return s.replace('٠','0').replace('١','1').replace('٢','2').replace('٣','3').replace('٤','4')
@@ -264,6 +292,93 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void startLiveScanner() {
+        if (!page.equals("Vente") || livePreviewView == null) return;
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, LIVE_CAMERA_PERMISSION_REQUEST);
+            return;
+        }
+        if (liveAnalysisExecutor == null || liveAnalysisExecutor.isShutdown()) liveAnalysisExecutor = Executors.newSingleThreadExecutor();
+        if (liveBarcodeScanner == null) {
+            BarcodeScannerOptions options = new BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS).build();
+            liveBarcodeScanner = BarcodeScanning.getClient(options);
+        }
+        ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(this);
+        future.addListener(() -> {
+            try {
+                if (!page.equals("Vente") || livePreviewView == null || isFinishing()) return;
+                liveCameraProvider = future.get();
+                liveCameraProvider.unbindAll();
+                Preview preview = new Preview.Builder().build();
+                preview.setSurfaceProvider(livePreviewView.getSurfaceProvider());
+                ImageAnalysis analysis = new ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build();
+                analysis.setAnalyzer(liveAnalysisExecutor, imageProxy -> {
+                    android.media.Image mediaImage = imageProxy.getImage();
+                    if (mediaImage == null) { imageProxy.close(); return; }
+                    InputImage image = InputImage.fromMediaImage(mediaImage, imageProxy.getImageInfo().getRotationDegrees());
+                    liveBarcodeScanner.process(image)
+                        .addOnSuccessListener(getMainExecutor(), barcodes -> {
+                            if (barcodes == null || barcodes.isEmpty()) return;
+                            for (Barcode barcode : barcodes) {
+                                String value = barcode.getRawValue();
+                                if (value != null && !value.trim().isEmpty()) {
+                                    handleLiveBarcode(westernDigits(value.trim()));
+                                    break;
+                                }
+                            }
+                        })
+                        .addOnCompleteListener(getMainExecutor(), task -> imageProxy.close());
+                });
+                liveCameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis);
+                CrashLogger.log("SCANNER", "Continuous in-screen barcode camera started");
+            } catch (Exception e) {
+                CrashLogger.crash("Could not start continuous barcode camera", e);
+                toast("Scanner indisponible");
+            }
+        }, ContextCompat.getMainExecutor(this));
+    }
+
+    private void handleLiveBarcode(String code) {
+        long now = System.currentTimeMillis();
+        if (code.equals(lastLiveBarcode) && now - lastLiveBarcodeAt < 1800L) return;
+        lastLiveBarcode = code;
+        lastLiveBarcodeAt = now;
+        Product matched = null;
+        for (Product product : products) if (code.equals(product.barcode)) { matched = product; break; }
+        if (matched != null) {
+            addToCart(matched);
+            return;
+        }
+        dialog().setTitle("Code-barres scanné")
+            .setMessage(code + "\\nProduit inconnu. Voulez-vous créer le produit ?")
+            .setNegativeButton("Annuler", null)
+            .setPositiveButton("Créer", (d, w) -> {
+                Product draft = new Product(id(), "Produit " + code, "Divers", code, 0, 0);
+                productDialog(draft, true);
+            }).show();
+    }
+
+    private void stopLiveScanner() {
+        try { if (liveCameraProvider != null) liveCameraProvider.unbindAll(); }
+        catch (Exception e) { CrashLogger.crash("Stopping live barcode camera failed", e); }
+        livePreviewView = null;
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == LIVE_CAMERA_PERMISSION_REQUEST) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) startLiveScanner();
+            else toast("Camera permission may be needed");
+        }
+    }
+
+    @Override protected void onDestroy() {
+        stopLiveScanner();
+        if (liveAnalysisExecutor != null) liveAnalysisExecutor.shutdown();
+        if (liveBarcodeScanner != null) liveBarcodeScanner.close();
+        super.onDestroy();
+    }
+
     private void chooseLanguage() {
         String[] names = {"العربية", "Français", "English", "日本語"};
         String[] codes = {"ar", "fr", "en", "ja"};
@@ -379,6 +494,7 @@ public class MainActivity extends Activity {
     }
 
     private void render() {
+        stopLiveScanner();
         colors();
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setLayoutDirection(language.equals("ar") ? View.LAYOUT_DIRECTION_RTL : View.LAYOUT_DIRECTION_LTR); root.setBackgroundColor(bg);
         setContentView(root);
@@ -416,20 +532,32 @@ public class MainActivity extends Activity {
     private void salePage(){
         title("Nouvelle vente");
         LinearLayout search=card();
-        LinearLayout sr=row(); EditText find=input("Nom ou code-barres…",InputType.TYPE_CLASS_TEXT);sr.addView(find,new LinearLayout.LayoutParams(0,dp(50),1));
-        TextView scan=button("Scanner",()->startBarcodeScan(tr("Scannez le code-barres")));LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(105),dp(50));sp.leftMargin=dp(8);sr.addView(scan,sp);search.addView(sr);
-        addButtonRow(search,"Rechercher / ajouter",()->addByCode(find.getText().toString()));
+        LinearLayout scanAndSearch=row();
+        LinearLayout searchControls=new LinearLayout(this);
+        searchControls.setOrientation(LinearLayout.VERTICAL);
+        EditText find=input("Nom ou code-barres…",InputType.TYPE_CLASS_TEXT);
+        searchControls.addView(find,new LinearLayout.LayoutParams(-1,dp(50)));
+        addButtonRow(searchControls,"Rechercher / ajouter",()->addByCode(find.getText().toString()));
         find.setOnEditorActionListener((v,a,event)->{addByCode(find.getText().toString());return true;});
-        LinearLayout cats=card(); HorizontalScrollView hs=new HorizontalScrollView(this);LinearLayout cr=row();ArrayList<String> cs=new ArrayList<>();cs.add("Tout");for(Product product:products)if(!product.category.trim().isEmpty()&&!cs.contains(product.category.trim()))cs.add(product.category.trim());if(!cs.contains(category))category="Tout";for(String c:cs){TextView b=text(c,12,true);b.setPadding(dp(12),dp(10),dp(12),dp(10));b.setTextColor(category.equals(c)?BLUE:fg);cr.addView(b);b.setOnClickListener(v->{category=c;render();});}hs.addView(cr);cats.addView(hs);
-        title("Produits rapides");
-        LinearLayout grid=new LinearLayout(this);grid.setOrientation(LinearLayout.VERTICAL);
-        int shown=0;LinearLayout gr=null;
-        for(Product p:products){if(!category.equals("Tout")&&!p.category.equals(category))continue;if(shown%2==0){gr=row();grid.addView(gr,new LinearLayout.LayoutParams(-1,-2));}
-            LinearLayout tile=new LinearLayout(this);tile.setOrientation(LinearLayout.VERTICAL);tile.setPadding(dp(12),dp(12),dp(12),dp(12));tile.setBackground(shape(panel,14));
-            TextView name=text(p.name,14,true);tile.addView(name);TextView price=text(money(p.price),14,true);price.setTextColor(BLUE);tile.addView(price);small(tile,"Stock : "+p.stock);
-            LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,-2,1);tp.setMargins(dp(3),dp(3),dp(3),dp(6));gr.addView(tile,tp);tile.setOnClickListener(v->addToCart(p));shown++;
-        }
-        body.addView(grid);if(shown==0)small(body,"No products yet. Add a product or import your Excel file.");
+        scanAndSearch.addView(searchControls,new LinearLayout.LayoutParams(0,-2,1));
+        LinearLayout cameraColumn=new LinearLayout(this);
+        cameraColumn.setOrientation(LinearLayout.VERTICAL);
+        cameraColumn.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams cameraParams=new LinearLayout.LayoutParams(dp(116),-2);
+        cameraParams.leftMargin=dp(8);
+        scanAndSearch.addView(cameraColumn,cameraParams);
+        TextView cameraLabel=text("Scannez le code-barres",10,true);
+        cameraLabel.setGravity(Gravity.CENTER);
+        cameraLabel.setMaxLines(2);
+        cameraLabel.setPadding(0,0,0,dp(5));
+        cameraColumn.addView(cameraLabel,new LinearLayout.LayoutParams(-1,-2));
+        livePreviewView=new PreviewView(this);
+        livePreviewView.setImplementationMode(PreviewView.ImplementationMode.COMPATIBLE);
+        livePreviewView.setScaleType(PreviewView.ScaleType.FILL_CENTER);
+        livePreviewView.setBackgroundColor(Color.rgb(12,25,35));
+        cameraColumn.addView(livePreviewView,new LinearLayout.LayoutParams(-1,dp(132)));
+        search.addView(scanAndSearch);
+        startLiveScanner();
         LinearLayout basket=card();LinearLayout r=row();r.addView(text("Panier",18,true),new LinearLayout.LayoutParams(0,-2,1));TextView disc=text("Remise %",13,true);disc.setTextColor(BLUE);r.addView(disc);disc.setOnClickListener(v->discountDialog());basket.addView(r);
         if(cart.isEmpty())small(basket,"Le panier est vide. Touchez un produit pour commencer.");
         for(CartLine c:new ArrayList<>(cart)){LinearLayout crw=row();TextView label=text(c.product.name+" × "+c.qty,14,false);crw.addView(label,new LinearLayout.LayoutParams(0,-2,1));TextView minus=text("−",24,true);minus.setGravity(Gravity.CENTER);minus.setTextColor(BLUE);crw.addView(minus,new LinearLayout.LayoutParams(dp(36),dp(42)));minus.setOnClickListener(v->{c.qty--;if(c.qty<=0)cart.remove(c);render();});TextView plus=text("+",22,true);plus.setGravity(Gravity.CENTER);plus.setTextColor(BLUE);crw.addView(plus,new LinearLayout.LayoutParams(dp(36),dp(42)));plus.setOnClickListener(v->{if(c.qty<c.product.stock)c.qty++;else toast("Stock insuffisant");render();});basket.addView(crw);}
