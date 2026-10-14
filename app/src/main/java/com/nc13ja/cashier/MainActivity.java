@@ -18,6 +18,8 @@ import com.google.mlkit.vision.barcode.common.Barcode;
 import com.google.mlkit.vision.common.InputImage;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import android.os.Handler;
+import android.os.Looper;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
@@ -75,6 +77,9 @@ public class MainActivity extends AppCompatActivity {
     private ExecutorService liveAnalysisExecutor;
     private String lastLiveBarcode = "";
     private long lastLiveBarcodeAt = 0L;
+    private final Handler liveScanHandler = new Handler(Looper.getMainLooper());
+    private final Runnable clearLastLiveBarcode = () -> { lastLiveBarcode = ""; lastLiveBarcodeAt = 0L; };
+    private LinearLayout liveBasketContainer;
     private String westernDigits(String s) {
         if (s == null) return null;
         return s.replace('٠','0').replace('١','1').replace('٢','2').replace('٣','3').replace('٤','4')
@@ -315,14 +320,20 @@ public class MainActivity extends AppCompatActivity {
                     InputImage image = InputImage.fromMediaImage(mediaImage, imageProxy.getImageInfo().getRotationDegrees());
                     liveBarcodeScanner.process(image)
                         .addOnSuccessListener(getMainExecutor(), barcodes -> {
-                            if (barcodes == null || barcodes.isEmpty()) return;
+                            if (barcodes == null || barcodes.isEmpty()) {
+                                scheduleLiveBarcodeReset(850L);
+                                return;
+                            }
+                            boolean foundBarcode = false;
                             for (Barcode barcode : barcodes) {
                                 String value = barcode.getRawValue();
                                 if (value != null && !value.trim().isEmpty()) {
+                                    foundBarcode = true;
                                     handleLiveBarcode(westernDigits(value.trim()));
                                     break;
                                 }
                             }
+                            if (!foundBarcode) scheduleLiveBarcodeReset(850L);
                         })
                         .addOnCompleteListener(getMainExecutor(), task -> imageProxy.close());
                 });
@@ -335,15 +346,23 @@ public class MainActivity extends AppCompatActivity {
         }, ContextCompat.getMainExecutor(this));
     }
 
+    private void scheduleLiveBarcodeReset(long delayMs) {
+        liveScanHandler.removeCallbacks(clearLastLiveBarcode);
+        liveScanHandler.postDelayed(clearLastLiveBarcode, delayMs);
+    }
+
     private void handleLiveBarcode(String code) {
-        long now = System.currentTimeMillis();
-        if (code.equals(lastLiveBarcode) && now - lastLiveBarcodeAt < 1800L) return;
+        if (code.equals(lastLiveBarcode)) {
+            scheduleLiveBarcodeReset(1000L);
+            return;
+        }
         lastLiveBarcode = code;
-        lastLiveBarcodeAt = now;
+        lastLiveBarcodeAt = System.currentTimeMillis();
+        scheduleLiveBarcodeReset(1000L);
         Product matched = null;
         for (Product product : products) if (code.equals(product.barcode)) { matched = product; break; }
         if (matched != null) {
-            addToCart(matched);
+            addToCartFromLiveScanner(matched);
             return;
         }
         dialog().setTitle("Code-barres scanné")
@@ -353,6 +372,55 @@ public class MainActivity extends AppCompatActivity {
                 Product draft = new Product(id(), "Produit " + code, "Divers", code, 0, 0);
                 productDialog(draft, true);
             }).show();
+    }
+
+    private void addToCartFromLiveScanner(Product product) {
+        if (product.stock <= 0) { toast("Rupture de stock"); return; }
+        for (CartLine line : cart) {
+            if (line.product == product) {
+                if (line.qty < product.stock) line.qty++;
+                else { toast("Stock insuffisant"); return; }
+                populateBasket();
+                return;
+            }
+        }
+        cart.add(new CartLine(product, 1));
+        populateBasket();
+    }
+
+    private void populateBasket() {
+        if (liveBasketContainer == null) return;
+        liveBasketContainer.removeAllViews();
+        LinearLayout header = row();
+        header.addView(text("Panier", 18, true), new LinearLayout.LayoutParams(0, -2, 1));
+        TextView discount = text("Remise %", 13, true);
+        discount.setTextColor(BLUE);
+        header.addView(discount);
+        discount.setOnClickListener(v -> discountDialog());
+        liveBasketContainer.addView(header);
+        if (cart.isEmpty()) small(liveBasketContainer, "Le panier est vide. Touchez un produit pour commencer.");
+        for (CartLine line : new ArrayList<>(cart)) {
+            LinearLayout itemRow = row();
+            TextView label = text(line.product.name + " × " + line.qty, 14, false);
+            itemRow.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+            TextView minus = text("−", 24, true);
+            minus.setGravity(Gravity.CENTER);
+            minus.setTextColor(BLUE);
+            itemRow.addView(minus, new LinearLayout.LayoutParams(dp(36), dp(42)));
+            minus.setOnClickListener(v -> { line.qty--; if (line.qty <= 0) cart.remove(line); render(); });
+            TextView plus = text("+", 22, true);
+            plus.setGravity(Gravity.CENTER);
+            plus.setTextColor(BLUE);
+            itemRow.addView(plus, new LinearLayout.LayoutParams(dp(36), dp(42)));
+            plus.setOnClickListener(v -> { if (line.qty < line.product.stock) line.qty++; else toast("Stock insuffisant"); render(); });
+            liveBasketContainer.addView(itemRow);
+        }
+        TextView total = text("TOTAL  " + money(cartTotal()), 22, true);
+        total.setPadding(0, dp(12), 0, dp(4));
+        liveBasketContainer.addView(total);
+        addButtonRow(liveBasketContainer, "Encaisser en espèces", () -> checkout("Espèces"));
+        addButtonRow(liveBasketContainer, "Encaisser par carte", () -> checkout("Carte"));
+        addButtonRow(liveBasketContainer, "Vider le panier", () -> { cart.clear(); discountPercent = 0; render(); });
     }
 
     private void stopLiveScanner() {
@@ -555,13 +623,8 @@ public class MainActivity extends AppCompatActivity {
         cameraColumn.addView(livePreviewView,new LinearLayout.LayoutParams(-1,dp(132)));
         search.addView(scanAndSearch);
         startLiveScanner();
-        LinearLayout basket=card();LinearLayout r=row();r.addView(text("Panier",18,true),new LinearLayout.LayoutParams(0,-2,1));TextView disc=text("Remise %",13,true);disc.setTextColor(BLUE);r.addView(disc);disc.setOnClickListener(v->discountDialog());basket.addView(r);
-        if(cart.isEmpty())small(basket,"Le panier est vide. Touchez un produit pour commencer.");
-        for(CartLine c:new ArrayList<>(cart)){LinearLayout crw=row();TextView label=text(c.product.name+" × "+c.qty,14,false);crw.addView(label,new LinearLayout.LayoutParams(0,-2,1));TextView minus=text("−",24,true);minus.setGravity(Gravity.CENTER);minus.setTextColor(BLUE);crw.addView(minus,new LinearLayout.LayoutParams(dp(36),dp(42)));minus.setOnClickListener(v->{c.qty--;if(c.qty<=0)cart.remove(c);render();});TextView plus=text("+",22,true);plus.setGravity(Gravity.CENTER);plus.setTextColor(BLUE);crw.addView(plus,new LinearLayout.LayoutParams(dp(36),dp(42)));plus.setOnClickListener(v->{if(c.qty<c.product.stock)c.qty++;else toast("Stock insuffisant");render();});basket.addView(crw);}
-        TextView total=text("TOTAL  "+money(cartTotal()),22,true);total.setPadding(0,dp(12),0,dp(4));basket.addView(total);
-        addButtonRow(basket,"Encaisser en espèces",()->checkout("Espèces"));
-        addButtonRow(basket,"Encaisser par carte",()->checkout("Carte"));
-        addButtonRow(basket,"Vider le panier",()->{cart.clear();discountPercent=0;render();});
+        liveBasketContainer=card();
+        populateBasket();
     }
     private void addByCode(String q){if(q.trim().isEmpty())return;for(Product p:products)if(p.name.toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT))||p.barcode.equals(q.trim())){addToCart(p);return;}toast("Produit introuvable");}
     private void addToCart(Product p){if(p.stock<=0){toast("Rupture de stock");return;}for(CartLine c:cart)if(c.product==p){if(c.qty<p.stock)c.qty++;else toast("Stock insuffisant");render();return;}cart.add(new CartLine(p,1));render();}
