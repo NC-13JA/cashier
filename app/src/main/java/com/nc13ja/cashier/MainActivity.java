@@ -2,7 +2,10 @@ package com.nc13ja.cashier;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
-import androidx.appcompat.app.AppCompatActivity;
+import androidx.annotation.NonNull;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.LifecycleRegistry;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.Preview;
@@ -58,7 +61,9 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Locale;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends Activity implements LifecycleOwner {
+    private LifecycleRegistry lifecycleRegistry;
+    @NonNull @Override public Lifecycle getLifecycle() { return lifecycleRegistry; }
     private SharedPreferences prefs;
     private final ArrayList<Product> products = new ArrayList<>();
     private final ArrayList<CartLine> cart = new ArrayList<>();
@@ -319,7 +324,7 @@ public class MainActivity extends AppCompatActivity {
                     if (mediaImage == null) { imageProxy.close(); return; }
                     InputImage image = InputImage.fromMediaImage(mediaImage, imageProxy.getImageInfo().getRotationDegrees());
                     liveBarcodeScanner.process(image)
-                        .addOnSuccessListener(getMainExecutor(), barcodes -> {
+                        .addOnSuccessListener(ContextCompat.getMainExecutor(this), barcodes -> {
                             if (barcodes == null || barcodes.isEmpty()) {
                                 scheduleLiveBarcodeReset(850L);
                                 return;
@@ -335,7 +340,7 @@ public class MainActivity extends AppCompatActivity {
                             }
                             if (!foundBarcode) scheduleLiveBarcodeReset(850L);
                         })
-                        .addOnCompleteListener(getMainExecutor(), task -> imageProxy.close());
+                        .addOnCompleteListener(ContextCompat.getMainExecutor(this), task -> imageProxy.close());
                 });
                 liveCameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis);
                 CrashLogger.log("SCANNER", "Continuous in-screen barcode camera started");
@@ -352,6 +357,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void handleLiveBarcode(String code) {
+        if (!page.equals("Vente")) return;
         if (code.equals(lastLiveBarcode)) {
             scheduleLiveBarcodeReset(1000L);
             return;
@@ -427,6 +433,7 @@ public class MainActivity extends AppCompatActivity {
         try { if (liveCameraProvider != null) liveCameraProvider.unbindAll(); }
         catch (Exception e) { CrashLogger.crash("Stopping live barcode camera failed", e); }
         livePreviewView = null;
+        liveBasketContainer = null;
     }
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
@@ -439,6 +446,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override protected void onDestroy() {
         stopLiveScanner();
+        if (lifecycleRegistry != null) lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY);
         if (liveAnalysisExecutor != null) liveAnalysisExecutor.shutdown();
         if (liveBarcodeScanner != null) liveBarcodeScanner.close();
         super.onDestroy();
@@ -504,6 +512,8 @@ public class MainActivity extends AppCompatActivity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        lifecycleRegistry = new LifecycleRegistry(this);
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE);
         CrashLogger.log("LIFECYCLE", "MainActivity onCreate");
         prefs = getSharedPreferences("cashier_local_data", MODE_PRIVATE);
         dark = prefs.getBoolean("dark", false);
@@ -512,6 +522,26 @@ public class MainActivity extends AppCompatActivity {
         lowStockThreshold = Math.max(0, prefs.getInt("lowStockThreshold", 3));
         loadData();
         render();
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        if (lifecycleRegistry != null) lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (lifecycleRegistry != null) lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME);
+    }
+
+    @Override protected void onPause() {
+        if (lifecycleRegistry != null) lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE);
+        super.onPause();
+    }
+
+    @Override protected void onStop() {
+        if (lifecycleRegistry != null) lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP);
+        super.onStop();
     }
 
     private void colors() {
