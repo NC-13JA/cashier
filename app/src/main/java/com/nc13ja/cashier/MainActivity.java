@@ -18,8 +18,6 @@ import com.google.mlkit.vision.barcode.common.Barcode;
 import com.google.mlkit.vision.common.InputImage;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import android.os.Handler;
-import android.os.Looper;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
@@ -75,7 +73,6 @@ public class MainActivity extends AppCompatActivity {
     private ProcessCameraProvider liveCameraProvider;
     private BarcodeScanner liveBarcodeScanner;
     private ExecutorService liveAnalysisExecutor;
-    private final Handler liveScanHandler = new Handler(Looper.getMainLooper());
     private String lastLiveBarcode = "";
     private long lastLiveBarcodeAt = 0L;
     private String westernDigits(String s) {
@@ -350,7 +347,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         dialog().setTitle("Code-barres scanné")
-            .setMessage(code + "\\nProduit inconnu. Voulez-vous créer le produit ?")
+            .setMessage(code + "\nProduit inconnu. Voulez-vous créer le produit ?")
             .setNegativeButton("Annuler", null)
             .setPositiveButton("Créer", (d, w) -> {
                 Product draft = new Product(id(), "Produit " + code, "Divers", code, 0, 0);
